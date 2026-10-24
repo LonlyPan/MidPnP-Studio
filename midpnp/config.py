@@ -36,6 +36,7 @@ class AppSettings:
     log_level: str = "INFO"
     last_product_id: str = ""
     machine_profile_id: str = ""
+    machine_selected: bool = False
 
     @property
     def limits(self) -> MachineLimits:

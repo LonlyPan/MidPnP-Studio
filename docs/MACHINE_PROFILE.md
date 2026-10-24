@@ -17,10 +17,16 @@
 `$env:MIDPNP_DATA_DIR` 覆盖。当前机型记录在 `settings.json` 的
 `machine_profile_id` 字段里。
 
-切换方式（两种都行）：
+切换方式（三种都行）：
 
-1. 界面：**系统设置 → 机型配置** → 选择 → **应用并重连**；
-2. 手改 `settings.json` 的 `machine_profile_id`，重启程序。
+1. **图形化画廊（推荐）**：首次启动会自动弹出「选择你的设备」；之后从
+   **系统设置 → 机型配置 → 更换 / 添加设备** 打开同一个画廊。点卡片预览，
+   双击或点「使用此机型」确认；画廊里还能导入配置、另存副本、导出、删除。
+2. 界面：**系统设置 → 机型配置** → 更换设备；
+3. 手改 `settings.json` 的 `machine_profile_id`，重启程序。
+
+> 首次启动的判断条件是 `settings.json` 里既没有 `machine_profile_id`、
+> `machine_selected` 也是 false。选过或点过「稍后再说」后不再弹出。
 
 ## 2. 内置模板
 

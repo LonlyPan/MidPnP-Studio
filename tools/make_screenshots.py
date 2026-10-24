@@ -24,6 +24,7 @@ from midpnp.core.storage import Storage  # noqa: E402
 from midpnp.paths import AppPaths  # noqa: E402
 from midpnp.ui.context import AppContext  # noqa: E402
 from midpnp.ui.main_window import MainWindow  # noqa: E402
+from midpnp.ui.machine_gallery import MachineGalleryDialog  # noqa: E402
 from midpnp.ui.theme import STYLESHEET  # noqa: E402
 
 
@@ -49,6 +50,14 @@ def main() -> int:
     window.resize(1680, 1000)
     window.show()
     QTest.qWait(1600)
+
+    # 首次启动的设备画廊
+    gallery = MachineGalleryDialog(ctx, first_run=True, parent=window)
+    gallery.show()
+    QTest.qWait(500)
+    gallery.grab().save(str(out_dir / "13-machine-gallery.png"))
+    print("saved 13-machine-gallery")
+    gallery.reject()
 
     pages = [
         ("dashboard", "01-dashboard"),

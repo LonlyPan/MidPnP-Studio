@@ -50,8 +50,23 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         pass
     settings = load_settings(paths.settings)
+    first_run = not settings.machine_selected and not settings.machine_profile_id
     machine = MachineService()
     context = AppContext(paths, storage, settings, machine)
+
+    # 首次启动：先看图选设备（拓竹式设备选择），选完再创建主界面
+    if first_run and not args.smoke_test:
+        try:
+            from .ui.machine_gallery import select_machine
+
+            chosen = select_machine(context, first_run=True, parent=None)
+            if chosen is not None:
+                context.apply_profile(chosen)
+            context.settings.machine_selected = True
+            context.save_settings()
+        except Exception:
+            pass
+
     window = MainWindow(context)
 
     def handle_exception(exc_type: type[BaseException], exc_value: BaseException, exc_tb: object) -> None:

@@ -7,14 +7,15 @@
 | 检查 | 命令 | 结果 |
 | --- | --- | --- |
 | 语法编译 | `python -m compileall -q midpnp tests tools main.py` | 通过（0 错误） |
-| 单元测试 | `python -m unittest discover -s tests` | **91 项全部通过** |
+| 单元测试 | `python -m unittest discover -s tests` | **98 项全部通过** |
 | 端到端生产 | `python tools\smoke_production.py` | `Completed 35/35 · E2E OK` |
-| 界面离屏渲染 | `python tools\make_screenshots.py` | 10 个页面 + 生产中状态全部生成 |
+| 界面离屏渲染 | `python tools\make_screenshots.py` | 10 个页面 + 生产中状态 + 设备画廊全部生成 |
+| 设备画廊 | `tests/test_machine_gallery.py`（7 项） | 卡片数量/预选/切换/筛选/确认/删除保护/首次启动标题 |
 | 机型切换 | 无头脚本切到 `bench-single` | 行程 300 mm 生效，旧料站坐标被正确判为超行程 |
 | 视觉对位 | 无头脚本 + 截图 | 3 点仿射复原 0.25° / 0.35 mm（RMS 0.000 mm） |
 | 底部对中 | `tests/test_vision.py` | 0.12 mm / 1.2° 可复原（±0.03 mm / ±0.35°） |
 
-新增测试覆盖：机型配置读写/校验/投影、封装归一化与匹配打分、CSV/KiCad/OpenPnP 板导入、
+新增测试覆盖：机型配置读写/校验/投影、设备画廊交互、封装归一化与匹配打分、CSV/KiCad/OpenPnP 板导入、
 单位与镜像变换、仿射求解与合理性校验、仿真相机基准点对齐、底部对中、G-code 命令模板渲染。
 
 本期**未**重新执行 PyInstaller 打包（需要单独安装打包依赖并生成 50 MB 产物）；

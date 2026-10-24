@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -24,6 +24,7 @@ from ... import APP_NAME, __version__
 from ...config import AppSettings
 from ...core.profiles import MachineProfile, ProfileError, profile_issues_text
 from ..context import AppContext
+from ..machine_gallery import MachineArt
 from ..theme import COLORS
 from ..widgets import Card, PageHeader, PageScroll, button, hline, make_chip
 
@@ -275,12 +276,29 @@ class SettingsPage(QWidget):
         hint.setProperty("role", "hint")
         hint.setWordWrap(True)
         card.body.addWidget(hint)
-        form = QFormLayout()
-        form.setSpacing(9)
-        self.profile_combo = QComboBox()
-        self.profile_combo.setMinimumWidth(250)
-        form.addRow("当前机型", self.profile_combo)
-        card.body.addLayout(form)
+
+        machine_row = QHBoxLayout()
+        machine_row.setSpacing(12)
+        self.profile_art = MachineArt()
+        self.profile_art.setFixedSize(156, 94)
+        machine_row.addWidget(self.profile_art)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(3)
+        self.profile_name = QLabel("—")
+        self.profile_name.setStyleSheet("font-size: 15px; font-weight: 700;")
+        self.profile_meta = QLabel("")
+        self.profile_meta.setProperty("role", "mono")
+        self.profile_meta.setWordWrap(True)
+        self.profile_meta.setStyleSheet("font-size: 11px;")
+        text_col.addWidget(self.profile_name)
+        text_col.addWidget(self.profile_meta)
+        text_col.addStretch(1)
+        machine_row.addLayout(text_col, 1)
+        self.change_profile_button = button("更换 / 添加设备", "layers", "primary")
+        self.change_profile_button.setToolTip("打开设备画廊，看图选择机型")
+        machine_row.addWidget(self.change_profile_button, 0, Qt.AlignmentFlag.AlignTop)
+        card.body.addLayout(machine_row)
+
         self.profile_detail = QLabel("")
         self.profile_detail.setProperty("role", "muted")
         self.profile_detail.setWordWrap(True)
@@ -291,59 +309,28 @@ class SettingsPage(QWidget):
         card.body.addWidget(self.profile_issues)
         row = QHBoxLayout()
         row.setSpacing(8)
-        self.apply_profile_button = button("应用并重连", "check", "primary")
         self.dup_profile_button = button("另存为", "layers", "subtle")
-        self.import_profile_button = button("导入", "upload", "subtle")
-        self.export_profile_button = button("导出", "download", "subtle")
         self.open_profile_button = button("配置目录", "folder", "subtle")
-        for control in (
-            self.apply_profile_button,
-            self.dup_profile_button,
-            self.import_profile_button,
-            self.export_profile_button,
-            self.open_profile_button,
-        ):
-            row.addWidget(control)
+        row.addWidget(self.dup_profile_button)
+        row.addWidget(self.open_profile_button)
         row.addStretch(1)
         card.body.addLayout(row)
-        self.profile_combo.currentIndexChanged.connect(self._on_profile_preview)
-        self.apply_profile_button.clicked.connect(self._apply_profile)
+        self.change_profile_button.clicked.connect(self._open_gallery)
         self.dup_profile_button.clicked.connect(self._duplicate_profile)
-        self.import_profile_button.clicked.connect(self._import_profile)
-        self.export_profile_button.clicked.connect(self._export_profile)
         self.open_profile_button.clicked.connect(self._open_profile_dir)
         return card
 
-    def _refresh_profiles(self) -> None:
-        self.profile_combo.blockSignals(True)
-        self.profile_combo.clear()
-        for item in self.ctx.profile_library.list():
-            prefix = "内置 · " if item.builtin else "自定义 · "
-            self.profile_combo.addItem(prefix + item.name, item.id)
-        index = self.profile_combo.findData(self.ctx.profile.id)
-        self.profile_combo.setCurrentIndex(max(0, index))
-        self.profile_combo.blockSignals(False)
-        self._on_profile_preview()
-
-    def _profile_from_combo(self) -> MachineProfile | None:
-        profile_id = str(self.profile_combo.currentData() or "")
-        return self.ctx.profile_library.get(profile_id) if profile_id else None
-
-    def _on_profile_preview(self, *_: object) -> None:
-        profile = self._profile_from_combo()
-        if profile is None:
-            self.profile_detail.setText("未找到机型配置")
-            self.profile_issues.setText("")
-            return
+    def _refresh_profile_view(self) -> None:
+        profile = self.ctx.profile
+        self.profile_art.set_profile(profile)
+        self.profile_name.setText(profile.name)
         limits = profile.limits()
-        cameras = "、".join(f"{camera.id}" for camera in profile.cameras) or "无"
-        nozzles = "、".join(profile.nozzle_ids()) or "无"
-        self.profile_detail.setText(
-            f"{profile.description}\n"
-            f"行程 {limits.travel_x_mm:.0f} × {limits.travel_y_mm:.0f} × {limits.travel_z_mm:.0f} mm · "
-            f"{len(profile.heads)} 头 / 吸嘴 {nozzles} · 料站 {profile.feeders.slot_count} · "
-            f"相机 {cameras} · 驱动 {profile.driver.type}"
+        self.profile_meta.setText(
+            f"{limits.travel_x_mm:.0f} × {limits.travel_y_mm:.0f} × {limits.travel_z_mm:.0f} mm · "
+            f"{len(profile.heads)} 头 / {len(profile.nozzle_ids())} 吸嘴 · "
+            f"{profile.feeders.slot_count} 料站 · {profile.driver.type}"
         )
+        self.profile_detail.setText(profile.description or "（该机型没有描述）")
         issues = profile.validate()
         errors = [issue for issue in issues if issue.is_error]
         if errors:
@@ -355,13 +342,21 @@ class SettingsPage(QWidget):
             self.profile_issues.setText(text)
             self.profile_issues.setStyleSheet(f"color: {COLORS['accent']}; font-size: 11px;")
 
-    def _apply_profile(self) -> None:
-        profile = self._profile_from_combo()
-        if profile is None:
-            return
+    def _open_gallery(self) -> None:
+        from ..machine_gallery import MachineGalleryDialog
+
         if self.ctx.machine.run_active:
             self.ctx.toast("生产运行中，无法切换机型", "warning")
             return
+        dialog = MachineGalleryDialog(self.ctx, first_run=False, parent=self)
+        if not dialog.exec() or dialog.selected_profile is None:
+            return
+        if dialog.selected_profile.id == self.ctx.profile.id:
+            self._refresh_profile_view()
+            return
+        self._apply_profile(dialog.selected_profile)
+
+    def _apply_profile(self, profile: MachineProfile) -> None:
         try:
             self.ctx.apply_profile(profile)
         except ProfileError as exc:
@@ -378,9 +373,7 @@ class SettingsPage(QWidget):
             self.ctx.toast("正在按新机型重新连接…", "info")
 
     def _duplicate_profile(self) -> None:
-        source = self._profile_from_combo()
-        if source is None:
-            return
+        source = self.ctx.profile
         new_id, ok = QInputDialog.getText(self, "另存机型", "新机型 ID（文件名）：", text=f"{source.id}-copy")
         if not ok or not new_id.strip():
             return
@@ -393,43 +386,9 @@ class SettingsPage(QWidget):
             QMessageBox.critical(self, "保存失败", str(exc))
             return
         self.ctx.profile_library.refresh()
-        self._refresh_profiles()
-        index = self.profile_combo.findData(clone.id)
-        if index >= 0:
-            self.profile_combo.setCurrentIndex(index)
+        self._refresh_profile_view()
         self.ctx.log("INFO", "MACHINE", f"已另存机型配置 {clone.name}（{clone.id}）")
-        self.ctx.toast("机型配置已另存，可编辑 JSON 后重新加载", "success")
-
-    def _import_profile(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "导入机型配置", str(self.ctx.paths.root), "机型配置 (*.json)")
-        if not path:
-            return
-        try:
-            profile = self.ctx.profile_library.import_file(path)
-        except ProfileError as exc:
-            QMessageBox.critical(self, "导入失败", str(exc))
-            return
-        self._refresh_profiles()
-        index = self.profile_combo.findData(profile.id)
-        if index >= 0:
-            self.profile_combo.setCurrentIndex(index)
-        self.ctx.log("INFO", "MACHINE", f"导入机型配置 {profile.name}（{profile.id}）")
-        self.ctx.toast("机型配置已导入", "success")
-
-    def _export_profile(self) -> None:
-        profile = self._profile_from_combo()
-        if profile is None:
-            return
-        default = self.ctx.paths.exports / f"{profile.id}.json"
-        path, _ = QFileDialog.getSaveFileName(self, "导出机型配置", str(default), "机型配置 (*.json)")
-        if not path:
-            return
-        try:
-            self.ctx.profile_library.export(profile, path)
-        except OSError as exc:
-            QMessageBox.critical(self, "导出失败", str(exc))
-            return
-        self.ctx.toast("机型配置已导出", "success")
+        self.ctx.toast("机型配置已另存，可在“更换 / 添加设备”里选择", "success")
 
     def _open_profile_dir(self) -> None:
         from ...core.profiles import user_profiles_dir
@@ -440,6 +399,7 @@ class SettingsPage(QWidget):
 
     def _connect(self) -> None:
         self.ctx.machine.connection_changed.connect(self._on_connection)
+        self.ctx.signals.profile_changed.connect(lambda *_: self._refresh_profile_view())
 
     def _on_connection(self, connected: bool, label: str) -> None:
         self.connection_chip.setText("已连接" if connected else "未连接")
@@ -487,7 +447,7 @@ class SettingsPage(QWidget):
         self.max_speed.setValue(settings.max_speed_mm_s)
         self.nozzle_count.setValue(settings.nozzle_count)
         self._update_mode_panel()
-        self._refresh_profiles()
+        self._refresh_profile_view()
         self.runtime_label.setText(
             f"数据目录：{self.ctx.paths.root}\n"
             f"Python {sys.version.split()[0]} · Qt 运行环境\n"
