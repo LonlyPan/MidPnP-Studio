@@ -1,0 +1,90 @@
+{
+  "schema": "midpnp.machine-profile/1",
+  "id": "gcode-3axis",
+  "name": "G-code 三轴机 · 600×500（模板）",
+  "description": "通用 G-code 控制器模板：通过 TCP 发送命令，抽象动作映射为可配置的 G-code 模板。首次接入请用空载、低速、单步验证，并按厂商协议修改 commands 中的模板。",
+  "vendor": "自定义",
+  "tags": ["template", "gcode", "tcp"],
+  "axes": {
+    "x": {"name": "X 轴", "unit": "mm", "min": 0, "max": 600, "home": "min", "max_speed": 400, "accel": 3000, "steps_per_mm": 100, "soft_limit": true},
+    "y": {"name": "Y 轴", "unit": "mm", "min": 0, "max": 500, "home": "min", "max_speed": 400, "accel": 3000, "steps_per_mm": 100, "soft_limit": true},
+    "z": {"name": "Z 轴", "unit": "mm", "min": 0, "max": 50, "home": "max", "max_speed": 150, "accel": 4000, "steps_per_mm": 400, "soft_limit": true},
+    "c": {"name": "C 轴（吸嘴旋转）", "unit": "deg", "min": -180, "max": 180, "home": "zero", "max_speed": 720, "accel": 6000, "steps_per_mm": 17.78, "soft_limit": true}
+  },
+  "heads": [
+    {
+      "id": "H1",
+      "name": "贴装头 1",
+      "nozzle_change": "manual",
+      "nozzles": [
+        {"id": "N1", "name": "N1 · 0.5 mm", "tip_diameter_mm": 0.5, "offset": {"x": 0, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "led"]},
+        {"id": "N2", "name": "N2 · 1.2 mm", "tip_diameter_mm": 1.2, "offset": {"x": 12, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "connector", "power"]}
+      ]
+    }
+  ],
+  "cameras": [
+    {
+      "id": "CAM-TOP",
+      "name": "俯视相机（随头）",
+      "mount": "head",
+      "resolution": [1280, 720],
+      "pixels_per_mm": 18.0,
+      "offset": {"x": 32.0, "y": 0.0, "z": -50.0},
+      "pipeline": "fiducial-default",
+      "lighting": "ring",
+      "exposure_ms": 6.0
+    },
+    {
+      "id": "CAM-BOTTOM",
+      "name": "底部对中相机",
+      "mount": "fixed",
+      "resolution": [800, 600],
+      "pixels_per_mm": 28.0,
+      "location": {"x": 300.0, "y": 60.0, "z": 5.0},
+      "pipeline": "bottom-default",
+      "lighting": "backlight",
+      "exposure_ms": 3.0
+    }
+  ],
+  "feeders": {
+    "type": "slot",
+    "slot_count": 48,
+    "first_slot": 1,
+    "slot_pitch_mm": 10.0,
+    "tape_pitch_mm": 4.0,
+    "origin": {"x": 20.0, "y": 470.0, "z": 0.0},
+    "direction": "x"
+  },
+  "driver": {
+    "type": "gcode-tcp",
+    "protocol": "gcode",
+    "host": "192.168.1.50",
+    "port": 5025,
+    "serial_port": "COM3",
+    "baud_rate": 115200,
+    "timeout_s": 15.0,
+    "connect_delay_ms": 200,
+    "commands": {
+      "connect": "M115",
+      "home": "G28",
+      "move": "G1 X{x} Y{y} Z{z} F{speed}",
+      "jog": "G91\nG1 X{dx} Y{dy} Z{dz} F{speed}\nG90",
+      "pick": "M42 P{slot} S1\nG4 P{delay}",
+      "place": "G4 P{delay}\nM42 P{slot} S0",
+      "vacuum": "M42 P{vacuum_pin} S{state}",
+      "feed": "G4 P{delay}",
+      "nozzle": "T{nozzle_index}",
+      "conveyor": "M600 P{action}",
+      "lights": "M355 S{state}",
+      "estop": "M112",
+      "clear_fault": "M999",
+      "status": "M114"
+    },
+    "ok_responses": ["ok", "OK", "done", "Done"]
+  },
+  "vision": {
+    "fiducial": {"search_radius_mm": 15.0, "threshold": 0.42, "min_area_mm2": 0.4, "max_area_mm2": 100.0, "shape": "circle", "min_score": 0.55, "required": 2},
+    "bottom": {"max_offset_mm": 2.5, "max_angle_deg": 30.0, "angle_step_deg": 1.0, "min_score": 0.5, "correction": "both"}
+  },
+  "safety": {"safe_z_mm": 15.0, "max_speed_mm_s": 400.0, "soft_limits": true, "estop": "software", "vacuum_settle_ms": 120}
+}

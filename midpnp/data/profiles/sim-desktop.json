@@ -1,0 +1,82 @@
+{
+  "schema": "midpnp.machine-profile/1",
+  "id": "sim-desktop",
+  "name": "内置模拟机 · 单头 4 吸嘴",
+  "description": "与演示数据配套的虚拟贴片机：420×360 mm 行程、单头四吸嘴、32 个料站、俯视 + 底部对中双相机。不连接任何硬件，用于流程演示与视觉算法自检。",
+  "vendor": "MidPnP Studio",
+  "tags": ["simulator", "demo", "default"],
+  "axes": {
+    "x": {"name": "X 轴", "unit": "mm", "min": 0, "max": 420, "home": "min", "max_speed": 320, "accel": 2500, "steps_per_mm": 80, "soft_limit": true},
+    "y": {"name": "Y 轴", "unit": "mm", "min": 0, "max": 360, "home": "min", "max_speed": 320, "accel": 2500, "steps_per_mm": 80, "soft_limit": true},
+    "z": {"name": "Z 轴", "unit": "mm", "min": 0, "max": 30, "home": "max", "max_speed": 120, "accel": 3000, "steps_per_mm": 400, "soft_limit": true},
+    "c": {"name": "C 轴（吸嘴旋转）", "unit": "deg", "min": -180, "max": 180, "home": "zero", "max_speed": 720, "accel": 5000, "steps_per_mm": 17.78, "soft_limit": true}
+  },
+  "heads": [
+    {
+      "id": "H1",
+      "name": "贴装头 1",
+      "axis_x": "x",
+      "axis_y": "y",
+      "axis_z": "z",
+      "nozzle_change": "manual",
+      "nozzles": [
+        {"id": "N1", "name": "N1 · 0.4 mm", "tip_diameter_mm": 0.4, "offset": {"x": 0, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "small", "led"]},
+        {"id": "N2", "name": "N2 · 0.7 mm", "tip_diameter_mm": 0.7, "offset": {"x": 8, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "crystal", "transistor"]},
+        {"id": "N3", "name": "N3 · 1.0 mm", "tip_diameter_mm": 1.0, "offset": {"x": 16, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "qfn", "qfp", "transistor"]},
+        {"id": "N4", "name": "N4 · 1.6 mm", "tip_diameter_mm": 1.6, "offset": {"x": 24, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "connector", "tht", "power"]}
+      ]
+    }
+  ],
+  "cameras": [
+    {
+      "id": "CAM-TOP",
+      "name": "俯视相机（随头）",
+      "mount": "head",
+      "resolution": [1280, 720],
+      "pixels_per_mm": 22.0,
+      "offset": {"x": 28.0, "y": 0.0, "z": -45.0},
+      "pipeline": "fiducial-default",
+      "lighting": "ring",
+      "exposure_ms": 8.0,
+      "enabled": true
+    },
+    {
+      "id": "CAM-BOTTOM",
+      "name": "底部对中相机",
+      "mount": "fixed",
+      "resolution": [800, 600],
+      "pixels_per_mm": 30.0,
+      "location": {"x": 210.0, "y": 40.0, "z": 6.0},
+      "pipeline": "bottom-default",
+      "lighting": "backlight",
+      "exposure_ms": 4.0,
+      "enabled": true
+    }
+  ],
+  "feeders": {
+    "type": "slot",
+    "slot_count": 32,
+    "first_slot": 1,
+    "slot_pitch_mm": 12.0,
+    "tape_pitch_mm": 4.0,
+    "origin": {"x": 18.0, "y": 330.0, "z": 0.0},
+    "direction": "x"
+  },
+  "driver": {
+    "type": "simulator",
+    "protocol": "jsonl",
+    "host": "127.0.0.1",
+    "port": 5025,
+    "serial_port": "COM3",
+    "baud_rate": 115200,
+    "timeout_s": 10.0,
+    "connect_delay_ms": 0,
+    "commands": {},
+    "ok_responses": ["ok", "OK", "done"]
+  },
+  "vision": {
+    "fiducial": {"search_radius_mm": 12.0, "threshold": 0.45, "min_area_mm2": 0.3, "max_area_mm2": 80.0, "shape": "circle", "min_score": 0.55, "required": 1},
+    "bottom": {"max_offset_mm": 2.0, "max_angle_deg": 20.0, "angle_step_deg": 1.0, "min_score": 0.55, "correction": "both"}
+  },
+  "safety": {"safe_z_mm": 12.0, "max_speed_mm_s": 320.0, "soft_limits": true, "estop": "software", "vacuum_settle_ms": 80}
+}

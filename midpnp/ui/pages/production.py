@@ -293,13 +293,7 @@ class ProductionPage(QWidget):
             self.table.setRowCount(0)
             self.point_chip.setText("0 点")
             return
-        plan, issues = build_job(
-            product,
-            components,
-            feeders,
-            self.ctx.settings.limits,
-            optimize=self.ctx.settings.optimize_route,
-        )
+        plan, issues = self.ctx.build_plan(product)
         if self.ctx.machine.run_active and self._plan is not None:
             plan = self._plan
         else:
@@ -380,20 +374,14 @@ class ProductionPage(QWidget):
 
     def _start(self) -> None:
         if not self.ctx.connected:
-            self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders())
+            self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders(), self.ctx.profile)
             self.ctx.toast("正在连接设备，连接后请再次点击开始", "info")
             return
         product = self.ctx.current_product
         if not product:
             self.ctx.toast("请先选择产品", "warning")
             return
-        plan, issues = build_job(
-            product,
-            self.ctx.components(),
-            self.ctx.feeders(),
-            self.ctx.settings.limits,
-            optimize=self.ctx.settings.optimize_route,
-        )
+        plan, issues = self.ctx.build_plan(product)
         if any(issue.is_error for issue in issues):
             IssuesDialog(issues, self).exec()
             return

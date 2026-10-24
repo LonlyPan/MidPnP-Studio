@@ -26,10 +26,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.importers import ImportError_, export_centroid_csv, parse_centroid_csv
-from ...core.models import Fiducial, Product, ValidationIssue, new_id, now_iso
+from ...core.importers import export_centroid_csv
+from ...core.imports import ImportResult, read_position_file
+from ...core.models import Fiducial, Product, ValidationIssue, VisionMode, new_id, now_iso
 from ..context import AppContext
-from ..dialogs import ConfirmDeleteDialog, IssuesDialog, PlacementDialog
+from ..dialogs import ConfirmDeleteDialog, ImportWizardDialog, IssuesDialog, PlacementDialog
 from ..theme import COLORS
 from ..widgets import (
     BoardView,
@@ -67,7 +68,7 @@ class ProgrammingPage(QWidget):
         self.new_button = button("新建", "plus", "subtle")
         self.dup_button = button("复制", "layers", "subtle")
         self.delete_button = button("删除", "trash", "subtle")
-        self.import_button = button("导入 CSV", "upload", "subtle")
+        self.import_button = button("导入坐标", "upload", "subtle")
         self.export_button = button("导出", "download", "subtle")
         self.save_button = button("保存产品", "save", "primary")
         for widget in (
@@ -612,16 +613,19 @@ class ProgrammingPage(QWidget):
             self,
             "导入贴装坐标",
             str(self.ctx.paths.exports),
-            "CSV 坐标文件 (*.csv *.txt);;所有文件 (*)",
+            "坐标文件 (*.csv *.txt *.tsv *.pos *.xml);;所有文件 (*)",
         )
         if not path:
             return
         try:
-            text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-            result = parse_centroid_csv(text)
-        except (OSError, ImportError_) as exc:
+            text, encoding = read_position_file(path)
+        except Exception as exc:  # PositionImportError / OSError
             QMessageBox.critical(self, "导入失败", str(exc))
             return
+        dialog = ImportWizardDialog(text, Path(path).name, self)
+        if not dialog.exec() or dialog.result_data is None:
+            return
+        result: ImportResult = dialog.result_data
         assert self._product is not None
         existing = {p.refdes for p in self._product.placements}
         duplicates = [p.refdes for p in result.placements if p.refdes in existing]
@@ -653,29 +657,75 @@ class ProgrammingPage(QWidget):
                 else:
                     self._product.placements.append(placement)
 
+        # 元件落库 + 封装自动匹配
         existing_components = {c.id for c in self.ctx.storage.list_components()}
-        added = 0
+        added = matched = likely = 0
+        unmatched: list[str] = []
         for component in result.components:
-            if component.id not in existing_components:
-                self.ctx.storage.save_component(component)
-                added += 1
+            if component.id in existing_components:
+                continue
+            match = self.ctx.package_library.match(
+                component.package,
+                body_hint=(component.length_mm, component.width_mm),
+            )
+            if match.package is not None:
+                component.package_id = match.package.id
+                component.match_score = match.score
+                if match.status == "matched":
+                    component.length_mm = match.package.length_mm
+                    component.width_mm = match.package.width_mm
+                    component.height_mm = match.package.height_mm
+                    if match.package.nozzle:
+                        component.nozzle = match.package.nozzle
+                    try:
+                        component.vision_mode = VisionMode(match.package.vision_mode)
+                    except ValueError:
+                        pass
+                    matched += 1
+                else:
+                    likely += 1
+                    unmatched.append(f"{component.package} → {match.package.name}（{match.score:.0%}，未自动套用）")
+            else:
+                unmatched.append(component.package or component.name)
+            self.ctx.storage.save_component(component)
+            added += 1
         self.ctx.signals.components_changed.emit()
+
+        if result.fiducials and not self._product.fiducials:
+            self._product.fiducials = list(result.fiducials)
+            self.ctx.log("INFO", "IMPORT", f"导入 {len(result.fiducials)} 个基准点")
+
         self._mark_dirty()
         self._populate_table()
         self.board.set_product(self._product, self.ctx.components())
         self.board_points_chip.setText(f"{len(self._product.placements)} 点")
         message = f"已导入 {len(result.placements)} 点"
         if added:
-            message += f"，自动创建 {added} 种元件"
+            message += f"，新建 {added} 种元件"
+        if matched:
+            message += f"，{matched} 种封装匹配"
         if duplicates and mode == "append":
             message += f"，覆盖 {len(duplicates)} 个同位号点"
         self.ctx.toast(message + "，请检查后保存", "success")
-        self.ctx.log("INFO", "IMPORT", f"CSV 导入 {path}：{len(result.placements)} 点")
-        if result.warnings:
-            issues = [
-                ValidationIssue("warning", "IMPORT", warning)
-                for warning in result.warnings
-            ]
+        self.ctx.log(
+            "INFO",
+            "IMPORT",
+            f"{result.format} 导入 {path}（{encoding}）：{len(result.placements)} 点 · "
+            f"封装匹配 {matched}/{added} · 疑似 {likely} · 未知 {len(unmatched) - likely}",
+        )
+        issues = [ValidationIssue("warning", "IMPORT", warning) for warning in result.warnings]
+        if unmatched:
+            preview = "；".join(unmatched[:6])
+            issues.append(
+                ValidationIssue(
+                    "warning",
+                    "PACKAGE_MATCH",
+                    f"{len(unmatched)} 种封装未确认或未匹配：{preview}"
+                    + ("…" if len(unmatched) > 6 else "")
+                    + "。可在“封装库”页做批量匹配。",
+                )
+            )
+        if issues:
             IssuesDialog(issues, self).exec()
 
     def _export_csv(self) -> None:

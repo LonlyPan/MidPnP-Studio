@@ -71,16 +71,26 @@ def main() -> int:
     print("saved 06-manual")
 
     window.navigate("vision")
+    window.vision.simulate_error.setChecked(True)
+    window.vision._capture()
     window.vision._align()
     QTest.qWait(1200)
     window.grab().save(str(out_dir / "07-vision.png"))
     print("saved 07-vision")
+    window.toast.hide()
 
     for key, name in (("logs", "08-logs"), ("settings", "09-settings")):
         window.navigate(key)
         QTest.qWait(400)
         window.grab().save(str(out_dir / f"{name}.png"))
         print(f"saved {name}")
+
+    window.navigate("packages")
+    window.packages.match_input.setText("QFN32_5x5")
+    window.packages._run_match()
+    QTest.qWait(400)
+    window.grab().save(str(out_dir / "12-packages.png"))
+    print("saved 12-packages")
 
     window.navigate("production")
     QTest.qWait(300)

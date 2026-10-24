@@ -1,0 +1,53 @@
+"""机型配置：配置文件驱动的多机型切换。"""
+
+from .library import (
+    ProfileError,
+    ProfileLibrary,
+    builtin_profiles_dir,
+    load_profile,
+    profile_issues_text,
+    user_profiles_dir,
+)
+from .schema import (
+    AxisConfig,
+    BottomVisionParams,
+    CameraConfig,
+    DriverConfig,
+    FeederBankConfig,
+    FiducialParams,
+    HeadConfig,
+    MachineProfile,
+    NozzleConfig,
+    Point3,
+    ProfileIssue,
+    SafetyConfig,
+    VisionConfig,
+    iter_nozzles,
+    profile_summary,
+    validate_profile,
+)
+
+__all__ = [
+    "AxisConfig",
+    "BottomVisionParams",
+    "CameraConfig",
+    "DriverConfig",
+    "FeederBankConfig",
+    "FiducialParams",
+    "HeadConfig",
+    "MachineProfile",
+    "NozzleConfig",
+    "Point3",
+    "ProfileError",
+    "ProfileIssue",
+    "ProfileLibrary",
+    "SafetyConfig",
+    "VisionConfig",
+    "builtin_profiles_dir",
+    "iter_nozzles",
+    "load_profile",
+    "profile_issues_text",
+    "profile_summary",
+    "user_profiles_dir",
+    "validate_profile",
+]

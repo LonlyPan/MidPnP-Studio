@@ -42,8 +42,11 @@ v0.1 不是完整的量产机型控制软件，边界如下：
 纯 Python，不依赖 Qt，可直接单元测试：
 
 - `models.py`：`Product / Placement / Component / Feeder / JobPlan / RunRecord` 等 dataclass，带 `to_dict/from_dict`。
-- `planner.py`：生产前检查与路径规划，返回 `JobPlan` 和 `ValidationIssue` 列表。
-- `importers.py`：EDA 坐标 CSV 解析 / 导出。
+- `profiles/`：机型配置的 schema、加载/保存/校验，投影到 `AppSettings` 与 `MachineLimits`。
+- `packages/`：封装库、名称归一、同义名与匹配打分。
+- `imports/`：坐标文件解析（CSV 列映射 / KiCad `.pos` / OpenPnP 板文件）与坐标变换。
+- `vision/`：相机标定、Stage 流水线、基准点仿射、底部对中。
+- `planner.py`：生产前检查与路径规划，返回 `JobPlan` 和 `ValidationIssue` 列表；支持视觉补偿与配置选嘴。
 - `protocol.py`：JSONL 增量帧解析、请求跟踪、错误类型。
 - `storage.py`：SQLite 持久化，线程安全。
 
@@ -90,16 +93,47 @@ ERROR/ESTOP → (clear_fault) → READY
 - 板卡画布 `BoardView` 支持板卡坐标与机器坐标两种视图、缩放、平移、贴装点选择、贴装状态着色、贴装头十字线。
 - 深色主题全部由 QSS 定义，图标由 QPainter 矢量生成，无外部图片依赖。
 
+### 2.4 机型配置层
+
+机型是一等对象，不在 UI 里硬编码：
+
+- `MachineProfile` 聚合轴、头/吸嘴、相机、供料器布局、驱动、视觉与安全参数；
+- 内置模板在 `midpnp/data/profiles/*.json`，用户配置在 `<数据目录>/profiles/`，
+  同 ID 时用户配置优先；
+- `AppContext` 启动时解析 `settings.machine_profile_id`，把机型投影到
+  `AppSettings`（连接方式/行程/速度）与 `MachineLimits`；
+- 界面切换机型 = 换 profile 对象 + 重连，业务层只读抽象对象；
+- 驱动按 `driver.type` 选择：`simulator` / `jsonl-*` / `gcode-*`，
+  G-code 用命令模板渲染，换控制器只改 JSON。
+
+### 2.5 封装库与坐标导入
+
+- `PackageDef` 描述本体尺寸、引脚、焊盘排布、默认吸嘴与视觉策略；
+- 匹配器做「归一化 → 同义名 → 名称相似 → 尺寸约束」四级打分，
+  输出确认/疑似/未知，导入时自动套用确认项；
+- 导入器与坐标变换解耦：`parse_positions(text, mapping, options)`，
+  支持通用 CSV、KiCad `.pos`、OpenPnP 板文件；
+- 封装库以 JSON 存两份（内置 + 用户覆盖），不进 SQLite，便于手改与迁移。
+
+### 2.6 视觉层
+
+- `Pipeline` 是 stage 链，结果写 `results`，可 JSON 序列化；
+- `CameraCalibration` 负责像素 ↔ 毫米，强制 Y 取反、角度取反；
+- 基准点：逐点拍摄 → 圆形特征 → 机器坐标 → 仿射（≥3 点最小二乘 / 2 点相似）
+  → 缩放/剪切/平移校验 → `BoardAlignment` 存到产品；
+- 底部对中：元件矩形 → 中心偏移 + 角度（180° 折叠）→ 通过/超差；
+- 补偿只影响 `BoardAlignment`，规划器在生成作业时套用，贴装点数据不变。
+
 ## 3. 数据模型
 
-- **Product**：板框尺寸、板厚、板原点（机器台面坐标）、Mark 点、贴装点。
+- **Product**：板框尺寸、板厚、板原点（机器台面坐标）、Mark 点、贴装点、视觉补偿。
 - **Placement**：位号、元件 ID、板内坐标（mm，左下角为原点）、旋转角、正反面、DNP、锁定。
-- **Component**：封装、长宽高、吸嘴、视觉策略、速度、显示颜色。
+- **Component**：封装名、封装 ID、长宽高、吸嘴、视觉策略、速度、显示颜色、匹配置信度。
 - **Feeder**：槽位（1–99）、元件、容量、余料、料带间距、取料坐标、低料阈值、启用状态。
 - **JobStep**：规划后的单步，含取料点、贴装点、吸嘴、旋转角、供料器槽位。
 - **RunRecord**：批次、产品、起止时间、总数、成功、失败、跳过、状态、时长。
 
-机器坐标 = 板原点 + 板内坐标。
+机器坐标 = 板原点 + 板内坐标；应用了视觉补偿后 = `BoardAlignment.transform(板内坐标)`。
 
 ## 4. 路径规划
 
@@ -154,8 +188,9 @@ meta(key, value)
 
 ## 9. 测试策略
 
-- 领域层单元测试：规划、协议、导入、存储、模拟器（32 个用例）。
+- 领域层单元测试：规划、协议、导入、存储、模拟器、机型配置、封装匹配、视觉、G-code（91 个用例）。
 - 端到端冒烟：启动主窗口 → 自动连接模拟器 → 运行 35 点 → 校验数据库记录与供料器扣减。
+- 视觉回归：仿真相机固定随机种子，基准点对位与底部对中的误差有断言。
 - UI 截图离屏渲染：9 个页面 + 生产中状态，用于视觉回归。
 - 打包后通过 `--smoke-test` 启动自检。
 

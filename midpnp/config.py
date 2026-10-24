@@ -35,6 +35,7 @@ class AppSettings:
     camera_index: int = 0
     log_level: str = "INFO"
     last_product_id: str = ""
+    machine_profile_id: str = ""
 
     @property
     def limits(self) -> MachineLimits:

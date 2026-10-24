@@ -1,0 +1,83 @@
+{
+  "schema": "midpnp.machine-profile/1",
+  "id": "dual-head-demo",
+  "name": "双头四吸嘴 · 450×400（示例）",
+  "description": "演示多贴装头配置：两个头各 2 个吸嘴，共用 X/Y 龙门、独立 C 轴与 Z 偏置。用于验证配置驱动的多头结构与规划器的吸嘴分配逻辑。",
+  "vendor": "MidPnP Studio",
+  "tags": ["demo", "dual-head"],
+  "axes": {
+    "x": {"name": "X 轴", "unit": "mm", "min": 0, "max": 450, "home": "min", "max_speed": 350, "accel": 3000, "steps_per_mm": 80, "soft_limit": true},
+    "y": {"name": "Y 轴", "unit": "mm", "min": 0, "max": 400, "home": "min", "max_speed": 350, "accel": 3000, "steps_per_mm": 80, "soft_limit": true},
+    "z": {"name": "Z 轴", "unit": "mm", "min": 0, "max": 35, "home": "max", "max_speed": 150, "accel": 4000, "steps_per_mm": 400, "soft_limit": true},
+    "c": {"name": "C 轴（吸嘴旋转）", "unit": "deg", "min": -180, "max": 180, "home": "zero", "max_speed": 900, "accel": 6000, "steps_per_mm": 17.78, "soft_limit": true}
+  },
+  "heads": [
+    {
+      "id": "H1",
+      "name": "头 1 · 小元件",
+      "nozzle_change": "manual",
+      "nozzles": [
+        {"id": "N1", "name": "N1 · 0.35 mm", "tip_diameter_mm": 0.35, "offset": {"x": 0, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "small"]},
+        {"id": "N2", "name": "N2 · 0.8 mm", "tip_diameter_mm": 0.8, "offset": {"x": 9, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "led", "crystal"]}
+      ]
+    },
+    {
+      "id": "H2",
+      "name": "头 2 · 大元件",
+      "nozzle_change": "manual",
+      "nozzles": [
+        {"id": "N3", "name": "N3 · 1.4 mm", "tip_diameter_mm": 1.4, "offset": {"x": 0, "y": 12, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "qfn", "qfp"]},
+        {"id": "N4", "name": "N4 · 2.5 mm", "tip_diameter_mm": 2.5, "offset": {"x": 9, "y": 12, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["connector", "power", "tht"]}
+      ]
+    }
+  ],
+  "cameras": [
+    {
+      "id": "CAM-TOP",
+      "name": "俯视相机 1（随头）",
+      "mount": "head",
+      "resolution": [1920, 1080],
+      "pixels_per_mm": 20.0,
+      "offset": {"x": 30.0, "y": 0.0, "z": -48.0},
+      "pipeline": "fiducial-default",
+      "lighting": "ring",
+      "exposure_ms": 5.0
+    },
+    {
+      "id": "CAM-BOTTOM",
+      "name": "底部对中相机",
+      "mount": "fixed",
+      "resolution": [800, 600],
+      "pixels_per_mm": 32.0,
+      "location": {"x": 225.0, "y": 50.0, "z": 5.0},
+      "pipeline": "bottom-default",
+      "lighting": "backlight",
+      "exposure_ms": 3.0
+    }
+  ],
+  "feeders": {
+    "type": "slot",
+    "slot_count": 40,
+    "first_slot": 1,
+    "slot_pitch_mm": 11.0,
+    "tape_pitch_mm": 4.0,
+    "origin": {"x": 18.0, "y": 370.0, "z": 0.0},
+    "direction": "x"
+  },
+  "driver": {
+    "type": "jsonl-tcp",
+    "protocol": "jsonl",
+    "host": "192.168.1.60",
+    "port": 5025,
+    "serial_port": "COM3",
+    "baud_rate": 115200,
+    "timeout_s": 10.0,
+    "commands": {},
+    "ok_responses": ["ok", "OK"]
+  },
+  "vision": {
+    "fiducial": {"search_radius_mm": 12.0, "threshold": 0.45, "min_area_mm2": 0.3, "max_area_mm2": 80.0, "shape": "circle", "min_score": 0.55, "required": 2},
+    "bottom": {"max_offset_mm": 2.0, "max_angle_deg": 20.0, "angle_step_deg": 0.5, "min_score": 0.55, "correction": "both"}
+  },
+  "safety": {"safe_z_mm": 14.0, "max_speed_mm_s": 350.0, "soft_limits": true, "estop": "software", "vacuum_settle_ms": 100}
+}

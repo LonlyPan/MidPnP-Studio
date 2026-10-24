@@ -12,7 +12,9 @@ from PySide6.QtCore import QObject, Signal
 
 from ...config import AppSettings
 from ..models import Feeder, JobPlan, MachineState, new_id, now_iso
+from ..profiles.schema import MachineProfile
 from ..protocol import MachineError
+from .gcode import GcodeBackend
 from .serial_link import SerialBackend
 from .simulator import SimulatorBackend
 from .tcp import TcpBackend
@@ -72,14 +74,28 @@ class MachineService(QObject):
 
     # ---------------- lifecycle ----------------
 
-    def connect_machine(self, settings: AppSettings, feeders: list[Feeder]) -> None:
+    def connect_machine(
+        self,
+        settings: AppSettings,
+        feeders: list[Feeder],
+        profile: MachineProfile | None = None,
+    ) -> None:
         if self._run_active:
             self.notification.emit("生产进行中，无法重新连接", "warning")
             return
         self._set_state(MachineState.CONNECTING)
         self.connection_changed.emit(False, "正在连接…")
         self.log.emit("INFO", "LINK", f"正在连接：{settings.connection_mode}")
-        self._commands.put(("connect", {"settings": settings.to_dict(), "feeders": [f.to_dict() for f in feeders]}))
+        self._commands.put(
+            (
+                "connect",
+                {
+                    "settings": settings.to_dict(),
+                    "feeders": [f.to_dict() for f in feeders],
+                    "profile": profile.to_dict() if profile is not None else None,
+                },
+            )
+        )
 
     def disconnect_machine(self) -> None:
         if self._run_active:
@@ -110,7 +126,7 @@ class MachineService(QObject):
             name, payload = item
             try:
                 if name == "connect":
-                    self._do_connect(payload["settings"], payload["feeders"])
+                    self._do_connect(payload["settings"], payload["feeders"], payload.get("profile"))
                 elif name == "disconnect":
                     self._do_disconnect()
                 elif name == "job":
@@ -127,11 +143,57 @@ class MachineService(QObject):
                 self._set_state(MachineState.ERROR)
                 self.connection_changed.emit(False, f"异常：{exc}")
 
-    def _do_connect(self, settings_data: dict[str, Any], feeders_data: list[dict[str, Any]]) -> None:
+    def _do_connect(
+        self,
+        settings_data: dict[str, Any],
+        feeders_data: list[dict[str, Any]],
+        profile_data: dict[str, Any] | None = None,
+    ) -> None:
         self._do_disconnect()
         settings = AppSettings.from_dict(settings_data)
         feeders = [Feeder.from_dict(item) for item in feeders_data]
+        profile = MachineProfile.from_dict(profile_data) if profile_data else None
         backend: Any
+        if profile is not None:
+            driver_type = profile.driver.type
+            limits = profile.limits()
+            label = f"{profile.name} · {driver_type}"
+            try:
+                if driver_type == "simulator":
+                    backend = SimulatorBackend(
+                        feeders=feeders,
+                        limits=limits,
+                        speed_factor=settings.simulation_speed,
+                        on_event=self._on_backend_event,
+                    )
+                elif driver_type == "gcode-tcp" or driver_type == "gcode-serial":
+                    backend = GcodeBackend(profile, on_event=self._on_backend_event)
+                elif driver_type == "jsonl-tcp":
+                    backend = TcpBackend(profile.driver.host, profile.driver.port, on_event=self._on_backend_event)
+                elif driver_type == "jsonl-serial":
+                    backend = SerialBackend(
+                        profile.driver.serial_port,
+                        profile.driver.baud_rate,
+                        on_event=self._on_backend_event,
+                    )
+                else:
+                    raise MachineError(f"机型配置里的驱动类型不受支持：{driver_type}")
+                self._backend = backend
+                status = backend.connect()
+                self._connected = True
+                self.connection_changed.emit(True, label)
+                self.log.emit("INFO", "LINK", f"设备已连接（{label}）")
+                self._apply_status(status)
+                return
+            except Exception as exc:
+                self._connected = False
+                self._backend = None
+                self.connection_changed.emit(False, f"连接失败：{exc}")
+                self.log.emit("ERROR", "LINK", f"连接失败（{label}）：{exc}")
+                self.notification.emit(f"连接失败：{exc}", "error")
+                self._set_state(MachineState.ERROR)
+                return
+
         mode = settings.connection_mode
         try:
             if mode == "simulator":

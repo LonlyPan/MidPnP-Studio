@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -12,17 +13,30 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from ..core.imports import (
+    ColumnMapping,
+    ImportOptions,
+    ImportResult,
+    PositionImportError,
+    header_preview,
+    parse_positions,
+)
 from ..core.models import Component, Feeder, Placement, Side, ValidationIssue, VisionMode, new_id
+from ..core.packages import PackageDef, compact_key
 from .icons import icon
 from .theme import COLORS
 from .widgets import button, hline, set_css
@@ -404,3 +418,339 @@ class ConfirmDeleteDialog(DialogShell):
         accept.setProperty("variant", "danger")
         accept.style().unpolish(accept)
         accept.style().polish(accept)
+
+
+_MAPPING_FIELDS = [
+    ("refdes", "位号"),
+    ("x", "X 坐标"),
+    ("y", "Y 坐标"),
+    ("rotation", "旋转角"),
+    ("component", "元件名称"),
+    ("package", "封装"),
+    ("side", "板面"),
+    ("skip", "跳过标记"),
+]
+
+
+class PackageDialog(DialogShell):
+    """封装编辑：名称/同义名/本体尺寸/焊盘排布/吸嘴与视觉策略。"""
+
+    def __init__(self, package: PackageDef | None = None, parent: QWidget | None = None) -> None:
+        editing = package is not None
+        super().__init__(
+            "编辑封装" if editing else "新建封装",
+            "封装几何用于吸嘴选择、视觉模板与坐标导入匹配",
+            parent,
+            580,
+        )
+        self._source = package
+        form = QFormLayout()
+        form.setSpacing(9)
+
+        self.name = QLineEdit(package.name if package else "")
+        self.name.setPlaceholderText("例如 0603 / SOIC-8 / QFN-32")
+        self.aliases = QLineEdit(", ".join(package.aliases) if package else "")
+        self.aliases.setPlaceholderText("可选，逗号分隔，例如 1608, R0603")
+        self.category = QComboBox()
+        for value, label in (
+            ("chip", "片式元件"),
+            ("ic", "IC"),
+            ("transistor", "三极管 / 二极管"),
+            ("led", "LED"),
+            ("inductor", "电感"),
+            ("connector", "连接器"),
+            ("fiducial", "基准点"),
+            ("other", "其他"),
+        ):
+            self.category.addItem(label, value)
+        if package is not None:
+            index = self.category.findData(package.category)
+            self.category.setCurrentIndex(max(0, index))
+
+        self.length = self._dim(package.length_mm if package else 1.6)
+        self.width = self._dim(package.width_mm if package else 0.8)
+        self.height = self._dim(package.height_mm if package else 0.8)
+        self.pin_count = QSpinBox()
+        self.pin_count.setRange(0, 256)
+        self.pin_count.setValue(package.pin_count if package else 2)
+        self.pad_rows = QComboBox()
+        for value, label in ((1, "两端各一（片式）"), (2, "两侧双列（SOIC/TSSOP）"), (4, "四边（QFP/QFN）"), (0, "自定义/无焊盘")):
+            self.pad_rows.addItem(label, value)
+        if package is not None:
+            index = self.pad_rows.findData(package.pad_rows)
+            self.pad_rows.setCurrentIndex(max(0, index))
+        self.pitch = self._dim(package.pad_pitch_mm if package else 0.0, maximum=100)
+        self.pad_width = self._dim(package.pad_width_mm if package else 0.0, maximum=50)
+        self.pad_height = self._dim(package.pad_height_mm if package else 0.0, maximum=50)
+        self.nozzle = QComboBox()
+        self.nozzle.addItem("（不指定）", "")
+        for index in range(1, 9):
+            self.nozzle.addItem(f"N{index}", f"N{index}")
+        if package is not None:
+            index = self.nozzle.findData(package.nozzle)
+            self.nozzle.setCurrentIndex(max(0, index))
+        self.vision = QComboBox()
+        for mode in VisionMode:
+            self.vision.addItem(mode.zh, mode.value)
+        if package is not None:
+            index = self.vision.findData(package.vision_mode)
+            self.vision.setCurrentIndex(max(0, index))
+        self.notes = QLineEdit(package.notes if package else "")
+        self.notes.setPlaceholderText("可选：焊盘来源、工艺备注")
+
+        form.addRow("封装名", self.name)
+        form.addRow("同义名", self.aliases)
+        form.addRow("类别", self.category)
+        form.addRow("长度 L", self.length)
+        form.addRow("宽度 W", self.width)
+        form.addRow("高度 H", self.height)
+        form.addRow("引脚数", self.pin_count)
+        form.addRow("焊盘排布", self.pad_rows)
+        form.addRow("焊盘间距", self.pitch)
+        form.addRow("焊盘宽", self.pad_width)
+        form.addRow("焊盘高", self.pad_height)
+        form.addRow("默认吸嘴", self.nozzle)
+        form.addRow("视觉策略", self.vision)
+        form.addRow("备注", self.notes)
+        self.body.addLayout(form)
+
+        hint = QLabel("焊盘尺寸为近似值，用于绘图与视觉演示；实际钢网/焊盘请按工艺文件填写。")
+        hint.setProperty("role", "hint")
+        hint.setWordWrap(True)
+        self.body.addWidget(hint)
+        self.error_label = QLabel("")
+        self.error_label.setProperty("role", "error")
+        self.body.addWidget(self.error_label)
+        self.add_cancel()
+        self.add_accept("保存" if editing else "创建", "check")
+
+    def _dim(self, value: float, maximum: float = 200.0) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+        spin.setRange(0.0, maximum)
+        spin.setDecimals(2)
+        spin.setSingleStep(0.05)
+        spin.setSuffix(" mm")
+        spin.setValue(value)
+        return spin
+
+    def accept(self) -> None:
+        if not self.name.text().strip():
+            self.error_label.setText("请输入封装名称")
+            return
+        super().accept()
+
+    def result_package(self) -> PackageDef:
+        source = self._source
+        name = self.name.text().strip()
+        aliases = [item.strip() for item in self.aliases.text().split(",") if item.strip()]
+        package_id = source.id if source else f"PKG-{compact_key(name) or new_id()}"
+        return PackageDef(
+            id=package_id,
+            name=name,
+            aliases=aliases,
+            category=str(self.category.currentData()),
+            length_mm=self.length.value(),
+            width_mm=self.width.value(),
+            height_mm=self.height.value(),
+            pin_count=self.pin_count.value(),
+            pad_rows=int(self.pad_rows.currentData()),
+            pad_pitch_mm=self.pitch.value(),
+            pad_width_mm=self.pad_width.value(),
+            pad_height_mm=self.pad_height.value(),
+            nozzle=str(self.nozzle.currentData() or ""),
+            vision_mode=str(self.vision.currentData()),
+            notes=self.notes.text().strip(),
+            builtin=False,
+        )
+
+
+class ImportWizardDialog(DialogShell):
+    """坐标导入向导：格式识别 → 列映射 → 单位/镜像/偏移 → 预览。"""
+
+    PREVIEW_LIMIT = 10
+
+    def __init__(self, text: str, filename: str = "", parent: QWidget | None = None) -> None:
+        super().__init__("导入坐标文件", filename or "未选择文件", parent, 880)
+        self.text = text
+        self.filename = filename
+        self.result_data: ImportResult | None = None
+        fmt, headers, mapping = header_preview(text, filename)
+        self._format = fmt
+        self._headers = headers
+        self._mapping_combos: dict[str, QComboBox] = {}
+        self._last_result: ImportResult | None = None
+
+        info = QHBoxLayout()
+        info.setSpacing(8)
+        label = QLabel("识别格式")
+        label.setProperty("role", "muted")
+        info.addWidget(label)
+        self.format_chip = QLabel({"csv": "通用坐标表 CSV/TSV", "kicad-pos": "KiCad .pos", "openpnp-board": "OpenPnP 板文件"}.get(fmt, fmt))
+        self.format_chip.setStyleSheet(
+            f"background: {COLORS['accent']}16; border: 1px solid {COLORS['accent']}55;"
+            f" color: {COLORS['accent']}; border-radius: 10px; padding: 3px 9px; font-size: 11px;"
+        )
+        info.addWidget(self.format_chip)
+        header_label = QLabel(f"表头 {len(headers)} 列" if headers else "未识别到表头")
+        header_label.setProperty("role", "faint")
+        info.addWidget(header_label)
+        info.addStretch(1)
+        self.body.addLayout(info)
+
+        if fmt == "csv":
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(7)
+            for index, (field_name, title) in enumerate(_MAPPING_FIELDS):
+                row, column = divmod(index, 2)
+                label = QLabel(title)
+                label.setProperty("role", "muted")
+                combo = QComboBox()
+                combo.addItem("（不映射）", "")
+                for header in headers:
+                    combo.addItem(header, header)
+                current = getattr(mapping, field_name, "")
+                target = combo.findData(current)
+                if target < 0 and current:
+                    combo.addItem(current, current)
+                    target = combo.count() - 1
+                combo.setCurrentIndex(max(0, target))
+                combo.currentIndexChanged.connect(self._refresh)
+                self._mapping_combos[field_name] = combo
+                grid.addWidget(label, row, column * 2)
+                grid.addWidget(combo, row, column * 2 + 1)
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(3, 1)
+            self.body.addLayout(grid)
+        else:
+            hint = QLabel("该格式字段固定（位号/型号/封装/X/Y/角度/板面），无需手动映射；下方可调整单位与坐标变换。")
+            hint.setProperty("role", "hint")
+            hint.setWordWrap(True)
+            self.body.addWidget(hint)
+
+        options = QFormLayout()
+        options.setSpacing(9)
+        self.unit = QComboBox()
+        for value, label_text in (("", "自动（按表头/文件）"), ("mm", "毫米 mm"), ("mil", "密耳 mil"), ("inch", "英寸 inch")):
+            self.unit.addItem(label_text, value)
+        self.unit.currentIndexChanged.connect(self._refresh)
+        self.rotation_offset = QDoubleSpinBox()
+        self.rotation_offset.setRange(-360.0, 360.0)
+        self.rotation_offset.setDecimals(1)
+        self.rotation_offset.setSuffix(" °")
+        self.rotation_offset.valueChanged.connect(self._refresh)
+        self.offset_x = QDoubleSpinBox()
+        self.offset_x.setRange(-1000.0, 1000.0)
+        self.offset_x.setDecimals(3)
+        self.offset_x.setSuffix(" mm")
+        self.offset_x.valueChanged.connect(self._refresh)
+        self.offset_y = QDoubleSpinBox()
+        self.offset_y.setRange(-1000.0, 1000.0)
+        self.offset_y.setDecimals(3)
+        self.offset_y.setSuffix(" mm")
+        self.offset_y.valueChanged.connect(self._refresh)
+        transform_row = QHBoxLayout()
+        transform_row.setSpacing(14)
+        self.mirror_x = QCheckBox("镜像 X")
+        self.mirror_y = QCheckBox("镜像 Y")
+        self.swap_xy = QCheckBox("交换 X/Y")
+        self.mirror_bottom = QCheckBox("底面 X 取反")
+        for control in (self.mirror_x, self.mirror_y, self.swap_xy, self.mirror_bottom):
+            control.stateChanged.connect(self._refresh)
+            transform_row.addWidget(control)
+        transform_row.addStretch(1)
+        options.addRow("默认单位", self.unit)
+        options.addRow("角度补偿", self.rotation_offset)
+        options.addRow("X 偏移", self.offset_x)
+        options.addRow("Y 偏移", self.offset_y)
+        options.addRow("坐标变换", transform_row)
+        self.body.addLayout(options)
+
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        self.status.setProperty("role", "muted")
+        self.body.addWidget(self.status)
+
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(["位号", "元件", "封装", "X (mm)", "Y (mm)", "角度", "板面", "跳过"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table.setMaximumHeight(230)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 70)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for column, width in ((3, 74), (4, 74), (5, 56), (6, 50), (7, 46)):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(column, width)
+        self.body.addWidget(self.table)
+
+        self.add_cancel("取消")
+        self.import_button = self.add_accept("导入", "upload")
+        self._refresh()
+
+    def _current_mapping(self) -> ColumnMapping | None:
+        if not self._mapping_combos:
+            return None
+        values = {key: str(combo.currentData() or "") for key, combo in self._mapping_combos.items()}
+        return ColumnMapping(**values)
+
+    def _current_options(self) -> ImportOptions:
+        return ImportOptions(
+            unit=str(self.unit.currentData() or ""),
+            rotation_offset_deg=self.rotation_offset.value(),
+            offset_x_mm=self.offset_x.value(),
+            offset_y_mm=self.offset_y.value(),
+            mirror_x=self.mirror_x.isChecked(),
+            mirror_y=self.mirror_y.isChecked(),
+            swap_xy=self.swap_xy.isChecked(),
+            mirror_bottom_x=self.mirror_bottom.isChecked(),
+        )
+
+    def _refresh(self, *_: object) -> None:
+        try:
+            result = parse_positions(
+                self.text,
+                self.filename,
+                self._current_mapping(),
+                self._current_options(),
+            )
+        except PositionImportError as exc:
+            self._last_result = None
+            self.status.setText(f"无法解析：{exc}")
+            self.status.setStyleSheet(f"color: {COLORS['danger']}; font-size: 12px;")
+            self.table.setRowCount(0)
+            self.import_button.setEnabled(False)
+            return
+        self._last_result = result
+        self.table.setRowCount(min(len(result.placements), self.PREVIEW_LIMIT))
+        for row, placement in enumerate(result.placements[: self.PREVIEW_LIMIT]):
+            values = [
+                placement.refdes,
+                "",
+                "",
+                f"{placement.x_mm:.3f}",
+                f"{placement.y_mm:.3f}",
+                f"{placement.rotation_deg:.1f}°",
+                placement.side.zh,
+                "是" if placement.skip else "",
+            ]
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column in (3, 4, 5, 6, 7):
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.table.setItem(row, column, item)
+        warnings = f"；{result.warnings[0]}" if result.warnings else ""
+        self.status.setText(f"已解析 {result.summary()}{warnings}")
+        self.status.setStyleSheet(f"color: {COLORS['accent']}; font-size: 12px;")
+        self.import_button.setEnabled(bool(result.placements))
+
+    def accept(self) -> None:
+        if self._last_result is None or not self._last_result.placements:
+            return
+        self.result_data = self._last_result
+        super().accept()

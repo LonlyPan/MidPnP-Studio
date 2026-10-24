@@ -1,0 +1,82 @@
+"""机器视觉：相机抽象、图像流水线、基准点对位与底部对中。"""
+
+from .bottom import PartAlignment, align_part
+from .calibration import CameraCalibration
+from .cameras import CameraSource, Frame, SimulatedCamera, simulated_camera_for
+from .fiducial import (
+    BoardAlignResult,
+    FiducialMeasurement,
+    align_board,
+    align_product_by_capture,
+    align_product_with_frame,
+    locate_fiducial,
+    measure_fiducials,
+    measure_fiducials_by_capture,
+    verify_board_alignment,
+)
+from .geometry import (
+    Affine,
+    AffineInfo,
+    AlignmentError,
+    BoardAlignment,
+    FiducialTolerances,
+    Point2,
+    affine_info,
+    check_alignment,
+    derive_affine,
+    fold_angle,
+    normalize_angle,
+)
+from .pipeline import (
+    CircleResult,
+    Contour,
+    KeyPoint,
+    Pipeline,
+    PipelineResult,
+    RectResult,
+    Stage,
+    build_pipeline,
+    register_pipeline,
+    register_stage,
+)
+from . import stages as _stages  # noqa: F401  注册内置 stage
+
+__all__ = [
+    "Affine",
+    "AffineInfo",
+    "AlignmentError",
+    "BoardAlignResult",
+    "BoardAlignment",
+    "CameraCalibration",
+    "CameraSource",
+    "CircleResult",
+    "Contour",
+    "FiducialMeasurement",
+    "FiducialTolerances",
+    "Frame",
+    "KeyPoint",
+    "PartAlignment",
+    "Pipeline",
+    "PipelineResult",
+    "Point2",
+    "RectResult",
+    "SimulatedCamera",
+    "Stage",
+    "affine_info",
+    "align_board",
+    "align_part",
+    "align_product_by_capture",
+    "align_product_with_frame",
+    "build_pipeline",
+    "check_alignment",
+    "derive_affine",
+    "fold_angle",
+    "locate_fiducial",
+    "measure_fiducials",
+    "measure_fiducials_by_capture",
+    "normalize_angle",
+    "register_pipeline",
+    "register_stage",
+    "simulated_camera_for",
+    "verify_board_alignment",
+]

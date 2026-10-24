@@ -284,7 +284,7 @@ class DashboardPage(QWidget):
         if self.ctx.connected:
             self.ctx.signals.navigate.emit("settings")
             return
-        self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders())
+        self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders(), self.ctx.profile)
 
     def _start_or_connect(self) -> None:
         if not self.ctx.connected:
@@ -402,13 +402,7 @@ class DashboardPage(QWidget):
             self.info_components.set(f"{len({p.component_id for p in product.active_placements})} 种")
             self.info_fiducials.set(f"{len(product.fiducials)} 个")
             try:
-                plan, issues = build_job(
-                    product,
-                    components,
-                    feeders,
-                    self.ctx.settings.limits,
-                    optimize=self.ctx.settings.optimize_route,
-                )
+                plan, issues = self.ctx.build_plan(product)
                 self.info_estimate.set(
                     format_duration(plan.estimated_cycle_s) if not any(i.is_error for i in issues) else "待检查"
                 )

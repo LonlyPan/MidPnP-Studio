@@ -31,6 +31,7 @@ from .pages.dashboard import DashboardPage
 from .pages.feeders import FeedersPage
 from .pages.logs import LogsPage
 from .pages.manual import ManualPage
+from .pages.packages import PackagesPage
 from .pages.production import ProductionPage
 from .pages.programming import ProgrammingPage
 from .pages.settings import SettingsPage
@@ -46,6 +47,7 @@ NAV_ITEMS = [
     ("programming", "产品编程", "programming", "运行"),
     ("feeders", "供料器", "feeder", "运行"),
     ("components", "元件库", "component", "运行"),
+    ("packages", "封装库", "layers", "运行"),
     ("manual", "手动控制", "manual", "运行"),
     ("vision", "视觉对位", "vision", "运行"),
     ("logs", "系统日志", "logs", "系统"),
@@ -343,6 +345,7 @@ class MainWindow(QMainWindow):
         self.programming = ProgrammingPage(self.ctx)
         self.feeders = FeedersPage(self.ctx)
         self.components = ComponentsPage(self.ctx)
+        self.packages = PackagesPage(self.ctx)
         self.manual = ManualPage(self.ctx)
         self.vision = VisionPage(self.ctx)
         self.logs = LogsPage(self.ctx)
@@ -353,6 +356,7 @@ class MainWindow(QMainWindow):
             ("programming", self.programming),
             ("feeders", self.feeders),
             ("components", self.components),
+            ("packages", self.packages),
             ("manual", self.manual),
             ("vision", self.vision),
             ("logs", self.logs),
@@ -407,7 +411,7 @@ class MainWindow(QMainWindow):
     def _auto_connect(self) -> None:
         self.ctx.log("INFO", "APP", f"{APP_NAME} v{__version__} 已启动")
         if self.ctx.settings.auto_connect and not self._connected:
-            self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders())
+            self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders(), self.ctx.profile)
         self._on_settings_changed()
 
     def showEvent(self, event: Any) -> None:  # noqa: N802

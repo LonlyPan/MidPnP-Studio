@@ -121,6 +121,8 @@ class Component:
     speed_pct: int = 100
     color: str = "#c9a227"
     notes: str = ""
+    package_id: str = ""
+    match_score: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -135,6 +137,8 @@ class Component:
             "speed_pct": self.speed_pct,
             "color": self.color,
             "notes": self.notes,
+            "package_id": self.package_id,
+            "match_score": round(self.match_score, 3),
         }
 
     @classmethod
@@ -155,6 +159,8 @@ class Component:
             speed_pct=max(10, min(100, int(data.get("speed_pct", 100)))),
             color=str(data.get("color", "#c9a227")),
             notes=str(data.get("notes", "")),
+            package_id=str(data.get("package_id", "")),
+            match_score=float(data.get("match_score", 0.0)),
         )
 
 
@@ -279,6 +285,7 @@ class Product:
     placements: list[Placement] = field(default_factory=list)
     notes: str = ""
     updated_at: str = field(default_factory=now_iso)
+    alignment: dict[str, Any] | None = None
 
     @property
     def active_placements(self) -> list[Placement]:
@@ -320,6 +327,7 @@ class Product:
             "placements": [p.to_dict() for p in self.placements],
             "notes": self.notes,
             "updated_at": self.updated_at,
+            "alignment": self.alignment,
         }
 
     @classmethod
@@ -337,6 +345,7 @@ class Product:
             placements=[Placement.from_dict(x) for x in data.get("placements", [])],
             notes=str(data.get("notes", "")),
             updated_at=str(data.get("updated_at") or now_iso()),
+            alignment=data.get("alignment") if isinstance(data.get("alignment"), dict) else None,
         )
 
 
@@ -348,6 +357,16 @@ class MachineLimits:
     safe_z_mm: float = 12.0
     max_speed_mm_s: float = 320.0
     nozzle_count: int = 4
+    min_x_mm: float = 0.0
+    min_y_mm: float = 0.0
+    min_z_mm: float = 0.0
+
+    def contains(self, x: float, y: float, z: float = 0.0) -> bool:
+        return (
+            self.min_x_mm <= x <= self.travel_x_mm
+            and self.min_y_mm <= y <= self.travel_y_mm
+            and self.min_z_mm <= z <= self.travel_z_mm
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -357,6 +376,9 @@ class MachineLimits:
             "safe_z_mm": self.safe_z_mm,
             "max_speed_mm_s": self.max_speed_mm_s,
             "nozzle_count": self.nozzle_count,
+            "min_x_mm": self.min_x_mm,
+            "min_y_mm": self.min_y_mm,
+            "min_z_mm": self.min_z_mm,
         }
 
     @classmethod
@@ -368,6 +390,9 @@ class MachineLimits:
             safe_z_mm=float(data.get("safe_z_mm", 12.0)),
             max_speed_mm_s=float(data.get("max_speed_mm_s", 320.0)),
             nozzle_count=int(data.get("nozzle_count", 4)),
+            min_x_mm=float(data.get("min_x_mm", 0.0)),
+            min_y_mm=float(data.get("min_y_mm", 0.0)),
+            min_z_mm=float(data.get("min_z_mm", 0.0)),
         )
 
 

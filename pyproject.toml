@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "midpnp-studio"
-version = "0.1.0"
+version = "0.2.0"
 description = "MidPnP Studio — SMT pick-and-place machine host software"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ authors = [{ name = "MidPnP Studio" }]
 dependencies = [
     "PySide6>=6.7,<7",
     "pyserial>=3.5",
+    "numpy>=1.26",
 ]
 
 [project.gui-scripts]
@@ -20,6 +21,9 @@ midpnp = "midpnp.app:main"
 
 [tool.setuptools.packages.find]
 include = ["midpnp*"]
+
+[tool.setuptools.package-data]
+midpnp = ["data/*.json", "data/profiles/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
