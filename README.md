@@ -41,8 +41,18 @@ MidPnP Studio 是一个从零搭建、可以直接运行的贴片机上位机原
 - 依赖：`PySide6`、`pyserial`、`numpy`（视觉算法）
 
 ```powershell
-cd "F:\MidPnP Studio"
+cd "D:\MidPnP-Studio"
 python -m pip install -r requirements.txt
+.\run.ps1
+```
+
+`run.ps1` / `run.bat` / `Start MidPnP Studio.bat` 都会优先使用项目内的
+`.venv\Scripts\python.exe`（存在时），否则回退到 PATH 里的 `python`。
+想用独立环境：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
 .\run.ps1
 ```
 
