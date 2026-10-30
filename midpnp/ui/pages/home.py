@@ -188,6 +188,7 @@ class MachineScene(QWidget):
     GREEN = "#37d67a"
     AMBER = "#f0b429"
     DIM = "#24343d"
+    feeder_hint = Signal(str)
 
     def __init__(self, ctx: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -508,6 +509,9 @@ class MachineScene(QWidget):
                 )
                 painter.drawEllipse(point, 3.2, 3.2)
 
+        if image is None:
+            self._draw_bed_hardware(painter, bed)
+
         painter.setPen(QPen(QColor(COLORS["faint"]), 1))
         painter.setFont(QFont("Cascadia Mono", 7))
         painter.drawText(QPointF(bed.left() + 8, bed.top() + 14), f"X 0–{travel_x:.0f} mm")
@@ -626,6 +630,16 @@ class MachineScene(QWidget):
                     painter.setBrush(QColor("#4d6874"))
                     painter.drawEllipse(center, max(1.2, radius * 0.45), max(1.2, radius * 0.45))
                 x_ref += 64
+
+    def _draw_bed_hardware(self, painter: QPainter, bed: QRectF) -> None:
+        width = bed.width()
+        height = bed.height()
+
+        def px(value: float) -> float:
+            return bed.left() + width * value / 1302
+
+        def py(value: float) -> float:
+            return bed.top() + height * value / 535
 
         # 校准板（宽梯形 PCB，顶部基准圆、中央标定格、侧面安装孔、底部插座）
         cal_top, cal_bottom = 278.0, 352.0
@@ -803,7 +817,7 @@ class MachineScene(QWidget):
         z = float(self.ctx.settings.safe_z_mm)
         self.ctx.machine.move_to(x, y, z)
         self.ctx.log("INFO", "MACHINE", f"移动到 {slot:02d} 号飞达取料点 ({x:.1f}, {y:.1f})")
-        self.ctx.toast(f"移动到 {slot:02d} 号飞达 ({x:.1f}, {y:.1f})", "info")
+        self.feeder_hint.emit(f"移动到 {slot:02d} 号飞达  ·  ({x:.1f}, {y:.1f})")
 
 
 # ---------------------------------------------------------------- 首页
@@ -923,6 +937,11 @@ class HomePage(QWidget):
             ("空位", "#2a3a44", True),
         ):
             legend.addWidget(self._legend_item(text, color, dashed))
+        self.move_hint = QLabel("")
+        self.move_hint.setStyleSheet(f"color: {COLORS['accent']}; font-size: 11px;")
+        self.move_hint.hide()
+        legend.addStretch(1)
+        legend.addWidget(self.move_hint)
         legend.addStretch(1)
         tip = QLabel("单击飞达可移动吸嘴 · 点击左上设备图切换机型")
         tip.setProperty("role", "faint")
@@ -947,6 +966,15 @@ class HomePage(QWidget):
         self.camera_top_button.clicked.connect(lambda: self._set_camera("top"))
         self.camera_bottom_button.clicked.connect(lambda: self._set_camera("bottom"))
         self.vacuum_button.clicked.connect(self._toggle_vacuum)
+        self.scene.feeder_hint.connect(self._show_feeder_hint)
+        self._hint_timer = QTimer(self)
+        self._hint_timer.setSingleShot(True)
+        self._hint_timer.timeout.connect(self.move_hint.hide)
+
+    def _show_feeder_hint(self, text: str) -> None:
+        self.move_hint.setText(text)
+        self.move_hint.show()
+        self._hint_timer.start(5000)
 
     def _build_jog_card(self) -> Card:
         card = Card(padding=10)
