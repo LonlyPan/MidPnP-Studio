@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -641,71 +642,102 @@ class MachineScene(QWidget):
         def py(value: float) -> float:
             return bed.top() + height * value / 535
 
-        # 校准板（宽梯形 PCB，顶部基准圆、中央标定格、侧面安装孔、底部插座）
-        cal_top, cal_bottom = 278.0, 352.0
-        cal_poly = QPolygonF(
+        # 校准板：按单独参考图 490×245 等比绘制
+        board_w = width * 184 / 1302
+        board_h = board_w / 2
+        board_left = px(648) - board_w / 2
+        board_top = py(315) - board_h / 2
+
+        def bx(value: float) -> float:
+            return board_left + board_w * value / 490
+
+        def by(value: float) -> float:
+            return board_top + board_h * value / 245
+
+        board = QPolygonF(
             [
-                QPointF(px(620), py(cal_top)),
-                QPointF(px(676), py(cal_top)),
-                QPointF(px(740), py(298)),
-                QPointF(px(740), py(330)),
-                QPointF(px(700), py(cal_bottom)),
-                QPointF(px(596), py(cal_bottom)),
-                QPointF(px(556), py(330)),
-                QPointF(px(556), py(298)),
+                QPointF(bx(110), by(20)),
+                QPointF(bx(380), by(20)),
+                QPointF(bx(415), by(40)),
+                QPointF(bx(480), by(110)),
+                QPointF(bx(480), by(190)),
+                QPointF(bx(400), by(225)),
+                QPointF(bx(90), by(225)),
+                QPointF(bx(10), by(190)),
+                QPointF(bx(10), by(110)),
+                QPointF(bx(75), by(40)),
             ]
         )
-        painter.setPen(QPen(QColor("#8fa1a8"), 1.2))
-        painter.setBrush(QColor("#c8d0d3"))
-        painter.drawPolygon(cal_poly)
+        painter.setPen(QPen(QColor("#4c5b62"), 1.15))
+        painter.setBrush(QColor("#d4dbdd"))
+        painter.drawPolygon(board)
 
-        # 顶部基准圆 + 中央标定格
-        painter.setPen(QPen(QColor("#53646b"), 1.0))
-        painter.setBrush(QColor("#eef2f3"))
-        painter.drawEllipse(QPointF(px(648), py(287)), width * 7 / 1302, width * 7 / 1302)
-        inner = QRectF(px(622), py(296), width * 52 / 1302, height * 30 / 535)
-        painter.setPen(QPen(QColor("#5d6b71"), 0.9))
-        painter.drawRect(inner)
-        cell = inner.width() / 4
-        for row in range(4):
-            for col in range(4):
-                if (row + col) % 2:
-                    continue
-                painter.setBrush(QColor("#3a474d"))
-                painter.drawRect(
-                    QRectF(inner.left() + col * cell, inner.top() + row * cell, cell, cell)
-                )
+        # 中央 3×3 标定格 + 中心圆基准
+        grid = QRectF(bx(190), by(53), board_w * 108 / 490, board_h * 105 / 245)
+        painter.setPen(QPen(QColor("#53646b"), 0.85))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(grid)
+        for index in (1, 2):
+            painter.drawLine(
+                QPointF(grid.left() + grid.width() * index / 3, grid.top()),
+                QPointF(grid.left() + grid.width() * index / 3, grid.bottom()),
+            )
+            painter.drawLine(
+                QPointF(grid.left(), grid.top() + grid.height() * index / 3),
+                QPointF(grid.right(), grid.top() + grid.height() * index / 3),
+            )
+        center = QPointF(bx(245), by(105))
+        for rr in (20, 14, 5):
+            painter.setPen(QPen(QColor("#53646b"), 0.9))
+            painter.setBrush(QColor("#eef2f3") if rr == 5 else Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(center, board_w * rr / 490, board_w * rr / 490)
+        painter.drawLine(QPointF(center.x() - board_w * 18 / 490, center.y()),
+                         QPointF(center.x() + board_w * 18 / 490, center.y()))
+        painter.drawLine(QPointF(center.x(), center.y() - board_w * 18 / 490),
+                         QPointF(center.x(), center.y() + board_w * 18 / 490))
 
-        # 两侧大安装孔、四角小孔
-        for x_ref, y_ref, r_ref in (
-            (598, 300, 8),
-            (698, 300, 8),
-            (578, 327, 4),
-            (718, 327, 4),
-            (584, 352, 3.5),
-            (712, 352, 3.5),
-        ):
-            painter.setPen(QPen(QColor("#53646b"), 1.0))
+        def ring(x_ref: float, y_ref: float, outer: float, inner: float, bolts: int = 0, bolt_r: float = 0.0) -> None:
+            point = QPointF(bx(x_ref), by(y_ref))
+            radius = board_w * outer / 490
+            painter.setPen(QPen(QColor("#53646b"), 0.9))
             painter.setBrush(QColor("#eef2f3"))
-            painter.drawEllipse(
-                QPointF(px(x_ref), py(y_ref)),
-                width * r_ref / 1302,
-                width * r_ref / 1302,
-            )
+            painter.drawEllipse(point, radius, radius)
             painter.setBrush(QColor("#3a474d"))
-            painter.drawEllipse(
-                QPointF(px(x_ref), py(y_ref)),
-                width * r_ref * 0.45 / 1302,
-                width * r_ref * 0.45 / 1302,
-            )
+            painter.drawEllipse(point, radius * 0.48, radius * 0.48)
+            for index in range(bolts):
+                angle = index * math.tau / bolts
+                hole = QPointF(
+                    point.x() + math.cos(angle) * radius * 0.75,
+                    point.y() + math.sin(angle) * radius * 0.75,
+                )
+                painter.drawEllipse(hole, board_w * bolt_r / 490, board_w * bolt_r / 490)
 
-        # 底部插座/齿状焊盘
+        # 四角安装孔
+        for x_ref, y_ref in ((190, 53), (298, 53), (190, 158), (298, 158)):
+            ring(x_ref, y_ref, 9, 4)
+        # 左右螺栓孔与普通孔
+        ring(155, 75, 22, 10, 8, 2.5)
+        ring(335, 75, 22, 10, 8, 2.5)
+        ring(68, 160, 18, 8, 8, 2.2)
+        ring(420, 160, 18, 8, 8, 2.2)
+        for x_ref, y_ref in ((105, 118), (385, 118)):
+            painter.setPen(QPen(QColor("#53646b"), 0.9))
+            painter.setBrush(QColor("#eef2f3"))
+            painter.drawEllipse(QPointF(bx(x_ref), by(y_ref)), board_w * 12 / 490, board_w * 12 / 490)
+        for x_ref, y_ref in ((38, 195), (463, 195)):
+            ring(x_ref, y_ref, 6, 2)
+
+        # 底部刻度尺
+        ruler_y = by(150)
         painter.setPen(QPen(QColor("#53646b"), 0.9))
-        for index in range(9):
-            x_ref = 615 + index * 8
-            painter.drawLine(QPointF(px(x_ref), py(338)), QPointF(px(x_ref), py(346)))
-        painter.setBrush(QColor("#eef2f3"))
-        painter.drawRect(QRectF(px(630), py(346), width * 36 / 1302, height * 6 / 535))
+        painter.drawLine(QPointF(bx(150), ruler_y), QPointF(bx(338), ruler_y))
+        for index in range(48):
+            x = bx(150 + index * 4)
+            tick = 5 if index % 10 == 0 else (3 if index % 5 == 0 else 1.6)
+            painter.drawLine(QPointF(x, ruler_y), QPointF(x, ruler_y + board_h * tick / 245))
+        painter.setFont(QFont("Cascadia Mono", 5))
+        for label, x_ref in (("10", 150), ("11", 196), ("12", 242), ("13", 288)):
+            painter.drawText(QPointF(bx(x_ref), ruler_y - board_h * 3 / 245), label)
 
         # 底部相机（同心圆 + 定位孔）
         cam_cx, cam_cy = px(648), py(390)
