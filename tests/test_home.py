@@ -79,6 +79,16 @@ class HomePageTests(unittest.TestCase):
         self.assertEqual(self.page.step_scale.value(), 100.0)
         self.assertAlmostEqual(self.page._step, 100.0)
 
+    def test_top_camera_hides_vacuum(self) -> None:
+        self.page._set_target("camera")
+        self.assertTrue(self.page.vacuum_button.isHidden())
+        self.page._set_target("left")
+        self.assertFalse(self.page.vacuum_button.isHidden())
+
+    def test_nozzle_selection_maps_to_vacuum_target(self) -> None:
+        self.page._set_target("right")
+        self.assertEqual(self.page._active_nozzle(), self.page._nozzle_ids[1])
+
     def test_camera_modes_switch(self) -> None:
         self.page._set_camera("top")
         self.assertIsNotNone(self.page._camera_config("top"))

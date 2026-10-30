@@ -61,8 +61,8 @@ class VerticalScale(QWidget):
         self._continuous = continuous
         self._index = max(0, min(index, len(self._labels) - 1))
         self._value = self._values[self._index] if self._values else 0.0
-        self.setFixedWidth(98)
-        self.setMinimumHeight(176)
+        self.setFixedWidth(112)
+        self.setMinimumHeight(190)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     # ---------------- 取值 ----------------
@@ -84,7 +84,7 @@ class VerticalScale(QWidget):
     # ---------------- 几何 ----------------
 
     def _track(self) -> tuple[float, float, float]:
-        return 44.0, max(60.0, self.height() - 10.0), self.width() - 18.0
+        return 50.0, max(70.0, self.height() - 10.0), self.width() - 20.0
 
     def _y_for_index(self, index: int) -> float:
         top, bottom, _ = self._track()
@@ -105,24 +105,24 @@ class VerticalScale(QWidget):
         top, bottom, rail_x = self._track()
 
         painter.setPen(QColor(COLORS["faint"]))
-        painter.setFont(QFont("Microsoft YaHei UI", 7))
+        painter.setFont(QFont("Microsoft YaHei UI", 8))
         lines = self._title.split("\n")
-        y_text = 10
+        y_text = 13
         for line in lines:
             painter.drawText(QPointF(2, y_text), line)
-            y_text += 11
+            y_text += 13
 
         painter.setPen(QPen(QColor("#2a3b44"), 3))
         painter.drawLine(QPointF(rail_x, top), QPointF(rail_x, bottom))
 
-        painter.setFont(QFont("Cascadia Mono", 7))
+        painter.setFont(QFont("Cascadia Mono", 9))
         for index, label in enumerate(self._labels):
             y = self._y_for_index(index)
             painter.setPen(QPen(QColor("#3a505c"), 1))
             painter.drawLine(QPointF(rail_x - 4, y), QPointF(rail_x + 4, y))
             painter.setPen(QColor(COLORS["muted"]))
             painter.drawText(
-                QRectF(0, y - 6, rail_x - 9, 12),
+                QRectF(0, y - 8, rail_x - 10, 16),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                 label,
             )
@@ -130,7 +130,7 @@ class VerticalScale(QWidget):
         handle_y = self._y_for_value()
         painter.setPen(QPen(QColor("#8ecbff"), 1))
         painter.setBrush(QColor("#2f8fe0"))
-        painter.drawRoundedRect(QRectF(rail_x - 7, handle_y - 5, 14, 10), 2.5, 2.5)
+        painter.drawRoundedRect(QRectF(rail_x - 8, handle_y - 6, 16, 12), 3, 3)
         painter.end()
 
     # ---------------- 交互 ----------------
@@ -273,14 +273,31 @@ class MachineScene(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(frame, 8, 8)
 
+        limits = profile.limits()
+        travel_x = max(1.0, limits.travel_x_mm)
+        inner = frame.adjusted(14, 14, -14, -14)
         self._lane_rects = {}
-        self._draw_bank(painter, QRectF(margin_x, top_y, width - margin_x * 2, lane_h), top_count, first_slot, "上排飞达")
+        self._draw_bank(
+            painter,
+            QRectF(margin_x, top_y, width - margin_x * 2, lane_h),
+            top_count,
+            first_slot,
+            "上排飞达",
+            inner,
+            travel_x,
+            bank,
+            "top",
+        )
         self._draw_bank(
             painter,
             QRectF(margin_x, bottom_y, width - margin_x * 2, lane_h),
             bottom_count,
             first_slot + top_count,
             "下排飞达",
+            inner,
+            travel_x,
+            bank,
+            "bottom",
         )
         self._draw_bed(painter, bed)
         self._draw_head(painter, frame)
@@ -305,26 +322,38 @@ class MachineScene(QWidget):
         count: int,
         first_slot: int,
         title: str,
+        inner: QRectF,
+        travel_x: float,
+        bank: Any,
+        bank_name: str,
     ) -> None:
         if count <= 0:
             return
-        painter.setPen(QPen(QColor(self.DIM), 1))
-        painter.setBrush(QColor("#0b1419"))
-        painter.drawRoundedRect(area, 5, 5)
-        painter.setPen(QColor(COLORS["faint"]))
-        painter.setFont(QFont("Microsoft YaHei UI", 8))
-        painter.drawText(QPointF(area.left() + 4, area.top() - 7), title)
-
-        inset = 6.0
-        lane_w = (area.width() - inset * 2) / count
+        pitch_px = bank.slot_pitch_mm / travel_x * inner.width()
+        lane_w = max(18.0, min(36.0, pitch_px + 2.5))
+        lanes: list[tuple[int, QRectF]] = []
         for index in range(count):
             slot = first_slot + index
-            lane = QRectF(
-                area.left() + inset + index * lane_w,
-                area.top() + 6,
-                max(1.0, lane_w - 2),
-                area.height() - 12,
-            )
+            feeder = self._feeders.get(slot)
+            x_mm = float(getattr(feeder, "pick_x_mm", 0.0)) if feeder is not None else 0.0
+            if x_mm <= 0:
+                local = index if bank_name == "top" else index
+                x_mm = bank.origin.x + local * bank.slot_pitch_mm
+            center_x = inner.left() + max(0.0, min(1.0, x_mm / travel_x)) * inner.width()
+            lane = QRectF(center_x - lane_w / 2, area.top() + 6, lane_w, area.height() - 12)
+            lanes.append((slot, lane))
+
+        left = min(lane.left() for _, lane in lanes) - 5
+        right = max(lane.right() for _, lane in lanes) + 5
+        base = QRectF(left, area.top(), max(10.0, right - left), area.height())
+        painter.setPen(QPen(QColor(self.DIM), 1))
+        painter.setBrush(QColor("#0b1419"))
+        painter.drawRoundedRect(base, 5, 5)
+        painter.setPen(QColor(COLORS["faint"]))
+        painter.setFont(QFont("Microsoft YaHei UI", 8))
+        painter.drawText(QPointF(base.left() + 4, area.top() - 7), title)
+
+        for slot, lane in lanes:
             self._lane_rects[slot] = lane
             feeder = self._feeders.get(slot)
             component = self._components.get(feeder.component_id) if feeder else None
@@ -353,9 +382,10 @@ class MachineScene(QWidget):
             text_color = QColor("#ffe6b0")
             style = Qt.PenStyle.SolidLine
         else:
-            fill = QColor(0, 0, 0, 0)
-            border = QColor(self.DIM)
-            text_color = QColor(COLORS["faint"])
+            fill = QColor(self.AMBER)
+            fill.setAlpha(16)
+            border = QColor(self.AMBER)
+            text_color = QColor(self.AMBER)
             style = Qt.PenStyle.DashLine
         if slot == self._hover_slot:
             border = QColor(COLORS["accent"])
@@ -364,40 +394,45 @@ class MachineScene(QWidget):
         painter.setBrush(fill)
         painter.drawRoundedRect(lane, 2.5, 2.5)
 
-        # 槽位号（左上）与料带规格（右上）
-        painter.setPen(QColor(COLORS["faint"]))
-        painter.setFont(QFont("Cascadia Mono", 6))
-        painter.drawText(QRectF(lane.left() + 1, lane.top() + 2, 10, 9), Qt.AlignmentFlag.AlignLeft, f"{slot:02d}")
+        # 顶部料带规格，底部槽位号
         if feeder is not None:
-            badge = QRectF(lane.right() - 13, lane.top() + 2, 12, 9)
-            badge_color = QColor(border)
-            badge_color.setAlpha(55)
-            painter.setPen(QPen(border, 0.7))
-            painter.setBrush(badge_color)
-            painter.drawRoundedRect(badge, 2, 2)
-            painter.setPen(QColor("#eaf6f9") if installed else QColor(COLORS["faint"]))
-            painter.setFont(QFont("Cascadia Mono", 6))
-            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, f"{feeder.tape_width_mm:g}")
+            painter.setPen(QColor("#dff3ea") if installed else QColor(COLORS["faint"]))
+            num_font = QFont("Cascadia Mono", 6)
+            mm_font = QFont("Cascadia Mono", 4)
+            num_text = f"{feeder.tape_width_mm:g}"
+            num_width = QFontMetrics(num_font).horizontalAdvance(num_text)
+            mm_width = QFontMetrics(mm_font).horizontalAdvance("mm")
+            start_x = lane.center().x() - (num_width + mm_width) / 2
+            painter.setFont(num_font)
+            painter.drawText(QPointF(start_x, lane.top() + 9), num_text)
+            painter.setFont(mm_font)
+            painter.drawText(QPointF(start_x + num_width, lane.top() + 9), "mm")
+        painter.setPen(QColor(COLORS["faint"]))
+        painter.setFont(QFont("Cascadia Mono", 5))
+        painter.drawText(
+            QRectF(lane.left() + 1, lane.bottom() - 9, lane.width() - 2, 8),
+            Qt.AlignmentFlag.AlignCenter,
+            f"{slot:02d}",
+        )
 
         if feeder is None:
+            painter.setPen(QColor(self.AMBER))
+            painter.setFont(QFont("Microsoft YaHei UI", 10, QFont.Weight.DemiBold))
+            painter.drawText(lane, Qt.AlignmentFlag.AlignCenter, "空")
             return
         value, package = self._feeder_texts(feeder, component)
         label = value
+        font = QFont("Cascadia Mono", 7)
+        metrics = QFontMetrics(font)
+        height = int(lane.height() - 32)
         if package and package.upper() not in value.upper():
             combined = f"{value}-{package}" if value else package
-            font = QFont("Cascadia Mono", 7)
-            metrics = QFontMetrics(font)
-            height = int(lane.height() - 22)
             label = combined if metrics.horizontalAdvance(combined) <= height else (value or package)
-        else:
-            font = QFont("Cascadia Mono", 7)
-            metrics = QFontMetrics(font)
-            height = int(lane.height() - 22)
         painter.setFont(font)
         painter.setPen(text_color)
         if label:
             painter.save()
-            painter.translate(lane.center().x(), lane.bottom() - 5)
+            painter.translate(lane.center().x(), lane.bottom() - 10)
             painter.rotate(-90)
             painter.drawText(QPointF(0, 0), metrics.elidedText(label, Qt.TextElideMode.ElideRight, height))
             painter.restore()
@@ -422,13 +457,15 @@ class MachineScene(QWidget):
         painter.setBrush(QColor("#0a1216"))
         painter.drawRoundedRect(bed, 6, 6)
 
-        painter.setPen(QPen(QColor(255, 255, 255, 22), 1))
-        step = max(12, int(bed.width() / 46))
-        y = bed.top() + 10
-        while y < bed.bottom() - 6:
-            x = bed.left() + 10
-            while x < bed.right() - 6:
-                painter.drawPoint(QPointF(x, y))
+        # 平台固定孔：一排排沉孔
+        step = max(18, int(bed.width() / 26))
+        y = bed.top() + 14
+        while y < bed.bottom() - 8:
+            x = bed.left() + 14
+            while x < bed.right() - 8:
+                painter.setPen(QPen(QColor("#31505c"), 1))
+                painter.setBrush(QColor("#05090b"))
+                painter.drawEllipse(QPointF(x, y), 2.2, 2.2)
                 x += step
             y += step
 
@@ -509,17 +546,13 @@ class MachineScene(QWidget):
         painter.setPen(QPen(QColor("#243d49"), 1.0, Qt.PenStyle.DashLine))
         painter.drawLine(QPointF(x, inner.top() + 2), QPointF(x, inner.bottom() - 2))
 
-        painter.setPen(QPen(QColor(COLORS["accent"]), 1.2, Qt.PenStyle.DashLine))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QPointF(x, y), 20, 20)
+        # 贴装头：十字线 + 原点
         painter.setPen(QPen(QColor(COLORS["accent"]), 1.4))
-        painter.setBrush(QColor("#12232b"))
-        painter.drawRoundedRect(QRectF(x - 16, y - 9, 32, 18), 3, 3)
-        nozzle_count = max(1, len(profile.nozzle_ids()))
-        for index in range(min(nozzle_count, 4)):
-            offset = (index - (min(nozzle_count, 4) - 1) / 2) * 8
-            painter.setBrush(QColor("#c9d6dc"))
-            painter.drawEllipse(QPointF(x + offset, y + 13), 2.4, 2.4)
+        painter.drawLine(QPointF(x - 16, y), QPointF(x + 16, y))
+        painter.drawLine(QPointF(x, y - 16), QPointF(x, y + 16))
+        painter.setBrush(QColor(COLORS["accent"]))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(x, y), 3.0, 3.0)
 
     # ---------------- 交互 ----------------
 
@@ -703,9 +736,6 @@ class HomePage(QWidget):
         title.setProperty("role", "section")
         top.addWidget(title)
         top.addStretch(1)
-        self.step_label = QLabel("步距 0.1 mm")
-        self.step_label.setProperty("role", "mono")
-        top.addWidget(self.step_label)
         card.body.addLayout(top)
 
         body = QHBoxLayout()
@@ -713,45 +743,6 @@ class HomePage(QWidget):
 
         left_col = QVBoxLayout()
         left_col.setSpacing(8)
-        grid = QGridLayout()
-        grid.setSpacing(6)
-        self._jog_buttons: list[Any] = []
-        for label, icon_name, row, col, direction in (
-            ("Y+", "arrow-up", 0, 1, (0, 1, 0)),
-            ("X-", "arrow-left", 1, 0, (-1, 0, 0)),
-            ("HOME", "home", 1, 1, None),
-            ("X+", "arrow-right", 1, 2, (1, 0, 0)),
-            ("Y-", "arrow-down", 2, 1, (0, -1, 0)),
-        ):
-            control = button("", icon_name, "subtle")
-            control.setProperty("jog", "true")
-            control.setMinimumSize(54, 42)
-            control.setIconSize(QSize(18, 18))
-            control.setToolTip(label)
-            if direction is None:
-                control.clicked.connect(self._home)
-                self.home_button = control
-            else:
-                control.clicked.connect(
-                    lambda checked=False, d=direction: self._jog(
-                        d[0] * self._step, d[1] * self._step, d[2] * self._step
-                    )
-                )
-            grid.addWidget(control, row, col)
-            self._jog_buttons.append(control)
-
-        z_up = button("Z+", "arrow-up", "subtle")
-        z_home = button("", "home", "subtle")
-        z_down = button("Z-", "arrow-down", "subtle")
-        z_home.setToolTip("Z 轴单独归位")
-        for row, control in enumerate((z_up, z_home, z_down)):
-            control.setMinimumSize(54, 42)
-            grid.addWidget(control, row, 3)
-            self._jog_buttons.append(control)
-        z_up.clicked.connect(lambda: self._jog(0.0, 0.0, self._step))
-        z_down.clicked.connect(lambda: self._jog(0.0, 0.0, -self._step))
-        z_home.clicked.connect(self._home_z)
-        left_col.addLayout(grid)
 
         target_row = QHBoxLayout()
         target_row.setSpacing(6)
@@ -776,6 +767,52 @@ class HomePage(QWidget):
         if self._total_nozzles < 2:
             self.target_buttons["right"].setEnabled(False)
         left_col.addLayout(target_row)
+
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        self._jog_buttons: list[Any] = []
+        for label, icon_name, row, col, direction in (
+            ("Y+", "arrow-up", 0, 1, (0, 1, 0)),
+            ("X-", "arrow-left", 1, 0, (-1, 0, 0)),
+            ("回零", None, 1, 1, None),
+            ("X+", "arrow-right", 1, 2, (1, 0, 0)),
+            ("Y-", "arrow-down", 2, 1, (0, -1, 0)),
+        ):
+            control = button(label, icon_name, "subtle")
+            control.setProperty("jog", "true")
+            control.setMinimumSize(54, 42)
+            if icon_name:
+                control.setIconSize(QSize(18, 18))
+            else:
+                control.setStyleSheet("font-size: 10px; font-weight: 600;")
+            control.setToolTip(label)
+            if direction is None:
+                control.clicked.connect(self._home)
+                self.home_button = control
+            else:
+                control.clicked.connect(
+                    lambda checked=False, d=direction: self._jog(
+                        d[0] * self._step, d[1] * self._step, d[2] * self._step
+                    )
+                )
+            grid.addWidget(control, row, col)
+            self._jog_buttons.append(control)
+
+        z_up = button("Z+", "arrow-up", "subtle")
+        z_home = button("Z归位", variant="subtle")
+        z_down = button("Z-", "arrow-down", "subtle")
+        z_home.setStyleSheet("font-size: 10px; font-weight: 600;")
+        z_home.setToolTip("Z 轴单独归位")
+        for row, control in enumerate((z_up, z_home, z_down)):
+            control.setMinimumSize(54, 42)
+            if row == 1:
+                control.setIconSize(QSize(0, 0))
+            grid.addWidget(control, row, 3)
+            self._jog_buttons.append(control)
+        z_up.clicked.connect(lambda: self._jog(0.0, 0.0, self._step))
+        z_down.clicked.connect(lambda: self._jog(0.0, 0.0, -self._step))
+        z_home.clicked.connect(self._home_z)
+        left_col.addLayout(grid)
 
         vacuum_row = QHBoxLayout()
         vacuum_row.setSpacing(8)
@@ -881,6 +918,7 @@ class HomePage(QWidget):
         self.connect_button.setText("重新连接" if connected else "连接设备")
         for control in self._jog_buttons:
             control.setEnabled(connected)
+        self.vacuum_button.setVisible(self._target != "camera")
         self.vacuum_button.setEnabled(connected and self._target != "camera")
         for key, control in self.target_buttons.items():
             control.setEnabled(connected)
@@ -1018,11 +1056,13 @@ class HomePage(QWidget):
         self._target = target
         self.target_buttons[target].setChecked(True)
         if target == "camera":
+            self.vacuum_button.setVisible(False)
             self.vacuum_button.setEnabled(False)
-            self.target_hint.setText("顶部相机：真空控制已禁用")
+            self.target_hint.setText("顶部相机视图")
             self._set_camera("top")
             return
         nozzle = self._active_nozzle()
+        self.vacuum_button.setVisible(True)
         self.vacuum_button.setEnabled(self.ctx.connected)
         self.vacuum_button.setChecked(bool(self._vacuum_by_nozzle.get(nozzle, False)))
         self.vacuum_button.setText("真空开" if self.vacuum_button.isChecked() else "真空")
@@ -1032,8 +1072,6 @@ class HomePage(QWidget):
 
     def _on_step_changed(self, value: float) -> None:
         self._step = float(value)
-        unit = "mm"
-        self.step_label.setText(f"步距 {value:g} {unit}")
 
     def _on_speed_changed(self, value: float) -> None:
         self._speed_pct = float(value)

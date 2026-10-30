@@ -7,8 +7,8 @@
 | 检查 | 命令 | 结果 |
 | --- | --- | --- |
 | 语法编译 | `python -m compileall -q midpnp tests tools main.py` | 通过（0 错误） |
-| 单元测试 | `python -m unittest discover -s tests` | **110 项全部通过** |
-| 首页 | `tests/test_home.py`（8 项） | 上下料分区、飞达参数/封装、双相机切换、线稿绘制、未连接横幅、竖置步距 |
+| 单元测试 | `python -m unittest discover -s tests` | **112 项全部通过** |
+| 首页 | `tests/test_home.py`（10 项） | 上下料分区、飞达参数/封装、双相机切换、线稿绘制、未连接横幅、竖置步距、顶部相机隐藏真空、左右吸嘴映射 |
 | 连接向导 | `tests/test_connect_dialog.py`（2 项） | 四步全部完成并自动关闭；取消可中止 |
 | 界面离屏渲染 | `python tools\make_screenshots.py` | 10 个页面 + 连接弹窗 + 设备画廊 |
 | 连接实机流程 | 无头脚本 | 相机 2 台 → 主机已连接 → 已回零 → 校准完成，约 2.7 s |
