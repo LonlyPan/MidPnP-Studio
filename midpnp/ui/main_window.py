@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer
@@ -39,7 +38,7 @@ from .pages.settings import SettingsPage
 from .pages.vision import VisionPage
 from .status import state_color, state_label
 from .theme import COLORS
-from .widgets import StatusDot, Toast, set_css, vline
+from .widgets import StatusDot, Toast, set_css
 
 
 NAV_ITEMS = [
@@ -71,10 +70,6 @@ class MainWindow(QMainWindow):
         self.resize(1600, 980)
         self._build()
         self._wire()
-        self._clock_timer = QTimer(self)
-        self._clock_timer.timeout.connect(self._tick_clock)
-        self._clock_timer.start(1000)
-        self._tick_clock()
         QTimer.singleShot(700, self._auto_connect)
         self.navigate("home")
 
@@ -92,7 +87,6 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(main)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        main_layout.addWidget(self._build_topbar())
         main_layout.addWidget(self._build_alarm_banner())
 
         self.stack = QStackedWidget()
@@ -191,69 +185,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(footer)
         return sidebar
 
-    def _build_topbar(self) -> QFrame:
-        bar = QFrame()
-        set_css(bar, "topbar")
-        bar.setFixedHeight(62)
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(24, 0, 18, 0)
-        layout.setSpacing(12)
-
-        crumb_col = QVBoxLayout()
-        crumb_col.setSpacing(1)
-        self.crumb = QLabel("生产总览")
-        self.crumb.setStyleSheet("font-size: 13px; font-weight: 600;")
-        self.crumb_sub = QLabel("工作区 / MIDPNP M1")
-        self.crumb_sub.setProperty("role", "faint")
-        crumb_col.addWidget(self.crumb)
-        crumb_col.addWidget(self.crumb_sub)
-        layout.addLayout(crumb_col)
-        layout.addStretch(1)
-
-        self.conn_button = QPushButton("  未连接")
-        self.conn_button.setIcon(icon("link", COLORS["muted"], 15))
-        self.conn_button.setProperty("variant", "subtle")
-        self.conn_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.conn_button.setFixedHeight(30)
-        self.conn_button.setToolTip("打开连接设置")
-        layout.addWidget(self.conn_button)
-
-        time_col = QVBoxLayout()
-        time_col.setSpacing(0)
-        self.clock = QLabel("--:--:--")
-        self.clock.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.clock.setStyleSheet("font-family: 'Cascadia Mono'; font-size: 14px; font-weight: 600;")
-        self.date_label = QLabel("")
-        self.date_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.date_label.setProperty("role", "faint")
-        time_col.addWidget(self.clock)
-        time_col.addWidget(self.date_label)
-        layout.addLayout(time_col)
-        layout.addWidget(vline())
-
-        user = QHBoxLayout()
-        user.setSpacing(7)
-        avatar = QLabel(self.ctx.settings.operator[:1] or "O")
-        avatar.setFixedSize(26, 26)
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        avatar.setStyleSheet(
-            f"background: {COLORS['accent_soft']}; color: {COLORS['accent']};"
-            f" border: 1px solid {COLORS['accent_dim']}; border-radius: 13px; font-weight: 700;"
-        )
-        user_name = QLabel(self.ctx.settings.operator)
-        user_name.setStyleSheet("font-size: 12px;")
-        user.addWidget(avatar)
-        user.addWidget(user_name)
-        layout.addLayout(user)
-
-        self.estop_button = QPushButton("■  急停")
-        self.estop_button.setProperty("variant", "estop")
-        self.estop_button.setFixedSize(94, 36)
-        self.estop_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.estop_button.setToolTip("立即停止所有运动（急停按钮）")
-        layout.addWidget(self.estop_button)
-        return bar
-
     def _build_alarm_banner(self) -> QFrame:
         self.alarm_banner = QFrame()
         self.alarm_banner.setFixedHeight(38)
@@ -281,10 +212,27 @@ class MainWindow(QMainWindow):
     def _build_statusbar(self) -> QFrame:
         bar = QFrame()
         set_css(bar, "statusbar")
-        bar.setFixedHeight(28)
+        bar.setFixedHeight(46)
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(20, 0, 20, 0)
-        layout.setSpacing(14)
+        layout.setContentsMargins(10, 0, 14, 0)
+        layout.setSpacing(10)
+
+        self.estop_button = QPushButton("■  急停")
+        self.estop_button.setProperty("variant", "estop")
+        self.estop_button.setFixedSize(92, 30)
+        self.estop_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.estop_button.setToolTip("立即停止所有运动（急停按钮）")
+        layout.addWidget(self.estop_button)
+        layout.addWidget(self._separator_label())
+
+        self.status_connect = QPushButton("  连接")
+        self.status_connect.setProperty("variant", "subtle")
+        self.status_connect.setFixedSize(92, 26)
+        self.status_connect.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.status_connect.setToolTip("连接 / 断开设备")
+        layout.addWidget(self.status_connect)
+        layout.addWidget(self._separator_label())
+
         self.footer_dot = StatusDot(COLORS["muted"], 6)
         layout.addWidget(self.footer_dot)
         self.footer_state = QLabel("离线")
@@ -349,7 +297,7 @@ class MainWindow(QMainWindow):
     # ---------------- signals ----------------
 
     def _wire(self) -> None:
-        self.conn_button.clicked.connect(self._on_conn_clicked)
+        self.status_connect.clicked.connect(self._on_conn_clicked)
         self.estop_button.clicked.connect(self._emergency_stop)
         self.ctx.signals.navigate.connect(self.navigate)
         self.ctx.signals.start_production.connect(self._start_production)
@@ -377,8 +325,7 @@ class MainWindow(QMainWindow):
             control.setChecked(button_key == key)
         item = next((item for item in NAV_ITEMS if item[0] == key), None)
         if item:
-            self.crumb.setText(item[1])
-            self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {item[1]}")
+            self.setWindowTitle(f"{APP_NAME} · {item[1]}")
         if key == "logs":
             self.logs.refresh()
         elif key == "home":
@@ -405,28 +352,20 @@ class MainWindow(QMainWindow):
         if hasattr(self, "toast"):
             self.toast.reposition()
 
-    # ---------------- clock ----------------
-
-    def _tick_clock(self) -> None:
-        now = datetime.now()
-        weekdays = "一二三四五六日"
-        self.clock.setText(now.strftime("%H:%M:%S"))
-        self.date_label.setText(f"{now.month}月{now.day}日 周{weekdays[now.weekday()]}")
-
     # ---------------- machine events ----------------
 
     def _on_connection(self, connected: bool, label: str) -> None:
         self._connected = connected
         self.ctx.connected = connected
         self.footer_conn.setText(label)
-        self.sidebar_conn.setText(label)
+        self.device_card.set_connection(label)
         color = COLORS["accent"] if connected else COLORS["muted"]
-        self.conn_button.setText("  已连接" if connected else "  未连接")
-        self.conn_button.setToolTip(label)
-        self.conn_button.setIcon(icon("wifi" if connected else "link", color, 15))
-        self.conn_button.setStyleSheet(
+        self.status_connect.setText("  已连接" if connected else "  连接")
+        self.status_connect.setToolTip(label or ("点击打开连接设置" if connected else "点击连接设备"))
+        self.status_connect.setStyleSheet(
             f"QPushButton {{ background: {color}0e; border: 1px solid {color}33;"
-            f" color: {color if connected else COLORS['muted']}; border-radius: 5px; padding: 5px 9px; font-size: 11px; }}"
+            f" color: {color if connected else COLORS['muted']}; border-radius: 5px;"
+            " padding: 3px 8px; font-size: 11px; }"
             "QPushButton:hover { background: #152530; }"
         )
         if not connected:
@@ -476,7 +415,6 @@ class MainWindow(QMainWindow):
     def _on_product_changed(self, product: Any) -> None:
         if product:
             self.footer_product.setText(f"{product.name} · REV {product.revision}")
-            self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {self.crumb.text()}")
 
     def _on_settings_changed(self) -> None:
         self.device_card.set_profile(self.ctx.profile)
@@ -486,7 +424,6 @@ class MainWindow(QMainWindow):
             "serial": "SERIAL MODE",
         }.get(self.ctx.settings.connection_mode, "OFFLINE MODE")
         self.mode_label.setText(mode)
-        self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {self.crumb.text()}")
         self.footer_product.setText(
             f"{self.ctx.current_product.name} · REV {self.ctx.current_product.revision}"
             if self.ctx.current_product
@@ -495,7 +432,6 @@ class MainWindow(QMainWindow):
 
     def _on_profile_changed(self, profile: Any) -> None:
         self.device_card.set_profile(self.ctx.profile)
-        self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {self.crumb.text()}")
         self.ctx.toast(f"设备已切换：{self.ctx.profile.name}", "info")
 
     def _on_conn_clicked(self) -> None:

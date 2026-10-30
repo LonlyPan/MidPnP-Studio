@@ -31,6 +31,7 @@ def _component(
     color: str,
     vision: VisionMode = VisionMode.NONE,
     notes: str = "",
+    value: str = "",
 ) -> Component:
     return Component(
         id=cid,
@@ -43,15 +44,16 @@ def _component(
         vision_mode=vision,
         color=color,
         notes=notes,
+        value=value,
     )
 
 
 def build_demo_components() -> list[Component]:
     return [
-        _component("CMP-R0603", "电阻 0603", "0603", 1.6, 0.8, 0.5, "N1", "#d6b35b"),
-        _component("CMP-C0603", "电容 0603", "0603", 1.6, 0.8, 0.8, "N1", "#c48458"),
-        _component("CMP-LED0805", "LED 0805", "0805", 2.0, 1.25, 0.8, "N2", "#e8f2c9"),
-        _component("CMP-L0805", "功率电感 0805", "0805", 2.0, 1.25, 1.0, "N2", "#7b8794"),
+        _component("CMP-R0603", "电阻 0603", "0603", 1.6, 0.8, 0.5, "N1", "#d6b35b", value="10K"),
+        _component("CMP-C0603", "电容 0603", "0603", 1.6, 0.8, 0.8, "N1", "#c48458", value="100nF"),
+        _component("CMP-LED0805", "LED 0805", "0805", 2.0, 1.25, 0.8, "N2", "#e8f2c9", value="LED-RED"),
+        _component("CMP-L0805", "功率电感 0805", "0805", 2.0, 1.25, 1.0, "N2", "#7b8794", value="2.2uH"),
         _component(
             "CMP-SOP8",
             "驱动 IC SOP-8",
@@ -59,10 +61,11 @@ def build_demo_components() -> list[Component]:
             4.9,
             3.9,
             1.5,
-            "N3",
+            "N2",
             "#2d343b",
             VisionMode.IC,
             "引脚间距 1.27 mm",
+            value="DRV8833",
         ),
         _component(
             "CMP-QFN24",
@@ -71,24 +74,25 @@ def build_demo_components() -> list[Component]:
             5.0,
             5.0,
             0.9,
-            "N3",
+            "N2",
             "#242a31",
             VisionMode.IC,
             "底部散热焊盘",
+            value="STM32G030",
         ),
-        _component("CMP-HDR4", "排针 2.54", "HDR-1x4", 10.16, 2.54, 2.5, "N4", "#b08d57"),
+        _component("CMP-HDR4", "排针 2.54", "HDR-1x4", 10.16, 2.54, 2.5, "N2", "#b08d57", value="4P"),
     ]
 
 
 def build_demo_feeders() -> list[Feeder]:
     definitions = [
-        (1, "CMP-R0603", 4000, 3120, 4.0, 40.0),
-        (2, "CMP-C0603", 4000, 2860, 4.0, 85.0),
-        (3, "CMP-LED0805", 3000, 1420, 4.0, 130.0),
-        (4, "CMP-SOP8", 1000, 640, 8.0, 175.0),
-        (5, "CMP-QFN24", 800, 520, 12.0, 220.0),
-        (6, "CMP-HDR4", 500, 40, 8.0, 265.0),
-        (7, "CMP-L0805", 2500, 1980, 4.0, 310.0),
+        (1, "CMP-R0603", 4000, 3120, 4.0, 40.0, 8),
+        (2, "CMP-C0603", 4000, 2860, 4.0, 85.0, 8),
+        (3, "CMP-LED0805", 3000, 1420, 4.0, 130.0, 12),
+        (4, "CMP-SOP8", 1000, 640, 8.0, 175.0, 16),
+        (5, "CMP-QFN24", 800, 520, 12.0, 220.0, 24),
+        (6, "CMP-HDR4", 500, 40, 8.0, 265.0, 16),
+        (7, "CMP-L0805", 2500, 1980, 4.0, 310.0, 12),
     ]
     return [
         Feeder(
@@ -104,8 +108,9 @@ def build_demo_feeders() -> list[Feeder]:
             pick_z_mm=0.0,
             enabled=True,
             low_threshold_pct=15,
+            tape_width_mm=tape,
         )
-        for slot, cid, capacity, remaining, pitch, pick_x in definitions
+        for slot, cid, capacity, remaining, pitch, pick_x, tape in definitions
     ]
 
 

@@ -34,6 +34,7 @@ class SimulatorBackend(MachineBackend):
         self._y = 0.0
         self._z = self.limits.safe_z_mm
         self._vacuum = False
+        self._vacuum_by_nozzle: dict[str, bool] = {"N1": False, "N2": False}
         self._nozzle = "N1"
         self._conveyor = "stopped"
         self._lights = False
@@ -125,10 +126,19 @@ class SimulatorBackend(MachineBackend):
             "placed": self._placed,
         }
 
-    def _home(self, **_: Any) -> dict[str, Any]:
+    def _home(self, axis: str | None = None, **_: Any) -> dict[str, Any]:
+        if str(axis or "").lower() == "z":
+            self._transition("homing")
+            self._z = self.limits.safe_z_mm
+            self._move_abs(self._x, self._y, self.limits.safe_z_mm, self.limits.max_speed_mm_s)
+            self._transition("ready")
+            self._emit("log", {"level": "INFO", "message": "Z 轴归位完成"})
+            return self._status()
         self._transition("homing")
         self._vacuum = False
-        self._emit("vacuum", {"on": False})
+        for nozzle in self._vacuum_by_nozzle:
+            self._vacuum_by_nozzle[nozzle] = False
+        self._emit("vacuum", {"on": False, "nozzle": ""})
         self._z = self.limits.safe_z_mm
         self._move_abs(0.0, 0.0, self.limits.safe_z_mm, self.limits.max_speed_mm_s)
         self._homed = True
@@ -188,7 +198,8 @@ class SimulatorBackend(MachineBackend):
             self._nozzle = str(nozzle)
         self._sleep(0.06)
         self._vacuum = True
-        self._emit("vacuum", {"on": True})
+        self._vacuum_by_nozzle[self._nozzle] = True
+        self._emit("vacuum", {"on": True, "nozzle": self._nozzle})
         self._emit("log", {"level": "DEBUG", "message": f"吸嘴 {self._nozzle} 从槽位 {feeder.slot:02d} 取料"})
         return {"picked": True, "component_id": feeder.component_id, "slot": feeder.slot, "nozzle": self._nozzle}
 
@@ -198,9 +209,10 @@ class SimulatorBackend(MachineBackend):
         if x is not None and y is not None:
             self._move_abs(float(x), float(y), 1.0, self.limits.max_speed_mm_s)
         self._sleep(0.05)
-        self._vacuum = False
+        self._vacuum_by_nozzle[self._nozzle] = False
+        self._vacuum = any(self._vacuum_by_nozzle.values())
         self._placed += 1
-        self._emit("vacuum", {"on": False})
+        self._emit("vacuum", {"on": False, "nozzle": self._nozzle})
         self._emit("log", {"level": "DEBUG", "message": f"贴装完成，角度 {rotation:.1f}°"})
         return {"placed": True, "count": self._placed}
 
@@ -216,11 +228,13 @@ class SimulatorBackend(MachineBackend):
         self._emit("feeder", {"id": feeder.id, "slot": feeder.slot, "remaining": feeder.remaining})
         return {"remaining": feeder.remaining, "slot": feeder.slot}
 
-    def _set_vacuum(self, on: bool = True, **_: Any) -> dict[str, Any]:
-        self._vacuum = bool(on)
+    def _set_vacuum(self, on: bool = True, nozzle: str | None = None, **_: Any) -> dict[str, Any]:
+        target = str(nozzle or self._nozzle)
+        self._vacuum_by_nozzle[target] = bool(on)
+        self._vacuum = any(self._vacuum_by_nozzle.values())
         self._sleep(0.03)
-        self._emit("vacuum", {"on": self._vacuum})
-        return {"vacuum": self._vacuum}
+        self._emit("vacuum", {"on": bool(on), "nozzle": target})
+        return {"vacuum": bool(on), "nozzle": target}
 
     def _set_nozzle(self, nozzle: str = "N1", **_: Any) -> dict[str, Any]:
         index = int(str(nozzle).lstrip("Nn") or "1")

@@ -239,6 +239,8 @@ class GcodeBackend:
             action=str(args.get("action", "")),
             count=str(int(args.get("count", 1))),
             timeout=f"{self.driver.timeout_s:.1f}",
+            axis=str(args.get("axis", "")),
+            axis_upper=str(args.get("axis", "")).upper(),
         )
         if "x" in axes:
             variables.setdefault("x_min", f"{axes['x'].min:.3f}")

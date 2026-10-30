@@ -2,8 +2,8 @@
 
 布局：
 - 左侧上：单相机画面（顶部 / 底部切换）；
-- 左侧下：Jog 点动；
-- 右侧：整机线稿（中间底板、上下各 25 个电动飞达，按装料状态高亮）。
+- 左侧下：Jog 点动（竖置步距/速度、吸嘴/相机选择、Z 单独归位）；
+- 右侧：整机线稿（外框 = 整机范围、中间底板、上下各 25 个电动飞达）。
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -32,19 +31,157 @@ from ..theme import COLORS
 from ..widgets import (
     Card,
     PageHeader,
-    StatusDot,
     button,
     make_chip,
-    set_css,
 )
 from .vision import CameraView
+
+
+# ---------------------------------------------------------------- 竖向标尺
+
+
+class VerticalScale(QWidget):
+    """竖置刻度控件：步距选择（离散）或速度（连续）。"""
+
+    valueChanged = Signal(float)
+
+    def __init__(
+        self,
+        title: str,
+        labels: list[str],
+        values: list[float] | None = None,
+        index: int = 0,
+        continuous: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._title = title
+        self._labels = labels
+        self._values = values or []
+        self._continuous = continuous
+        self._index = max(0, min(index, len(self._labels) - 1))
+        self._value = self._values[self._index] if self._values else 0.0
+        self.setFixedWidth(98)
+        self.setMinimumHeight(176)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    # ---------------- 取值 ----------------
+
+    def value(self) -> float:
+        return self._value
+
+    def set_value(self, value: float) -> None:
+        if self._continuous:
+            self._value = max(0.0, min(100.0, float(value)))
+        else:
+            if value in self._values:
+                self._index = self._values.index(value)
+            else:
+                self._index = min(self._index, len(self._values) - 1)
+            self._value = self._values[self._index]
+        self.update()
+
+    # ---------------- 几何 ----------------
+
+    def _track(self) -> tuple[float, float, float]:
+        return 44.0, max(60.0, self.height() - 10.0), self.width() - 18.0
+
+    def _y_for_index(self, index: int) -> float:
+        top, bottom, _ = self._track()
+        count = max(1, len(self._labels) - 1)
+        return top + (bottom - top) * index / count
+
+    def _y_for_value(self) -> float:
+        top, bottom, _ = self._track()
+        if self._continuous:
+            return bottom - (bottom - top) * (self._value / 100.0)
+        return self._y_for_index(self._index)
+
+    # ---------------- 绘制 ----------------
+
+    def paintEvent(self, event: Any) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        top, bottom, rail_x = self._track()
+
+        painter.setPen(QColor(COLORS["faint"]))
+        painter.setFont(QFont("Microsoft YaHei UI", 7))
+        lines = self._title.split("\n")
+        y_text = 10
+        for line in lines:
+            painter.drawText(QPointF(2, y_text), line)
+            y_text += 11
+
+        painter.setPen(QPen(QColor("#2a3b44"), 3))
+        painter.drawLine(QPointF(rail_x, top), QPointF(rail_x, bottom))
+
+        painter.setFont(QFont("Cascadia Mono", 7))
+        for index, label in enumerate(self._labels):
+            y = self._y_for_index(index)
+            painter.setPen(QPen(QColor("#3a505c"), 1))
+            painter.drawLine(QPointF(rail_x - 4, y), QPointF(rail_x + 4, y))
+            painter.setPen(QColor(COLORS["muted"]))
+            painter.drawText(
+                QRectF(0, y - 6, rail_x - 9, 12),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
+
+        handle_y = self._y_for_value()
+        painter.setPen(QPen(QColor("#8ecbff"), 1))
+        painter.setBrush(QColor("#2f8fe0"))
+        painter.drawRoundedRect(QRectF(rail_x - 7, handle_y - 5, 14, 10), 2.5, 2.5)
+        painter.end()
+
+    # ---------------- 交互 ----------------
+
+    def mousePressEvent(self, event: Any) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._update_from_position(event.position().y())
+
+    def mouseMoveEvent(self, event: Any) -> None:  # noqa: N802
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._update_from_position(event.position().y())
+
+    def wheelEvent(self, event: Any) -> None:  # noqa: N802
+        delta = 1 if event.angleDelta().y() < 0 else -1
+        if self._continuous:
+            self._set_value(self._value + 5 if delta > 0 else self._value - 5)
+        else:
+            self._set_index(self._index + delta)
+
+    def _update_from_position(self, y: float) -> None:
+        top, bottom, _ = self._track()
+        ratio = max(0.0, min(1.0, (bottom - y) / max(1.0, bottom - top)))
+        if self._continuous:
+            self._set_value(round(ratio * 100.0))
+        else:
+            index = round(ratio * (len(self._labels) - 1))
+            self._set_index(index)
+
+    def _set_index(self, index: int) -> None:
+        index = max(0, min(index, len(self._values) - 1))
+        if index == self._index:
+            return
+        self._index = index
+        self._value = self._values[index]
+        self.update()
+        self.valueChanged.emit(self._value)
+
+    def _set_value(self, value: float) -> None:
+        value = max(0.0, min(100.0, float(value)))
+        if abs(value - self._value) < 0.5:
+            return
+        self._value = value
+        self.update()
+        self.valueChanged.emit(self._value)
 
 
 # ---------------------------------------------------------------- 线稿总览
 
 
 class MachineScene(QWidget):
-    """整机俯视线稿：上下两排电动飞达 + 中间底板 + 龙门/贴装头。"""
+    """整机俯视线稿：外框为整机范围，上下两排电动飞达 + 中间底板。"""
 
     GREEN = "#37d67a"
     AMBER = "#f0b429"
@@ -54,6 +191,7 @@ class MachineScene(QWidget):
         super().__init__(parent)
         self.ctx = ctx
         self.setMinimumSize(560, 500)
+        self.setMouseTracking(True)
         self._profile = ctx.profile
         self._feeders: dict[int, Any] = {}
         self._components: dict[str, Any] = {}
@@ -62,6 +200,8 @@ class MachineScene(QWidget):
         self._state = MachineState.OFFLINE
         self._connected = False
         self._last_paint = 0.0
+        self._lane_rects: dict[int, QRectF] = {}
+        self._hover_slot = 0
         self.refresh()
 
     # ---------------- 数据 ----------------
@@ -119,7 +259,7 @@ class MachineScene(QWidget):
         first_slot = bank.first_slot
 
         margin_x = 30.0
-        lane_h = min(104.0, height * 0.17)
+        lane_h = min(116.0, height * 0.19)
         top_y = 46.0
         bottom_y = height - 30.0 - lane_h
         bed = QRectF(
@@ -128,13 +268,12 @@ class MachineScene(QWidget):
             width - margin_x * 2,
             max(80.0, bottom_y - (top_y + lane_h) - 40.0),
         )
-
-        # 外框
         frame = QRectF(margin_x - 10, top_y - 16, width - margin_x * 2 + 20, bottom_y + lane_h + 20 - (top_y - 16))
         painter.setPen(QPen(QColor("#2b4652"), 1.4))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(frame, 8, 8)
 
+        self._lane_rects = {}
         self._draw_bank(painter, QRectF(margin_x, top_y, width - margin_x * 2, lane_h), top_count, first_slot, "上排飞达")
         self._draw_bank(
             painter,
@@ -144,9 +283,10 @@ class MachineScene(QWidget):
             "下排飞达",
         )
         self._draw_bed(painter, bed)
+        self._draw_head(painter, frame)
 
         if not self._connected:
-            painter.setBrush(QColor(5, 10, 13, 80))
+            painter.setBrush(QColor(5, 10, 13, 60))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 10, 10)
             panel = QRectF(rect.center().x() - 150, rect.center().y() - 30, 300, 60)
@@ -158,8 +298,6 @@ class MachineScene(QWidget):
             painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "设备未连接\n点击「连接设备」开始")
         painter.end()
 
-    # ---------------- 飞达区 ----------------
-
     def _draw_bank(
         self,
         painter: QPainter,
@@ -170,11 +308,9 @@ class MachineScene(QWidget):
     ) -> None:
         if count <= 0:
             return
-        # 料架底座
         painter.setPen(QPen(QColor(self.DIM), 1))
         painter.setBrush(QColor("#0b1419"))
         painter.drawRoundedRect(area, 5, 5)
-
         painter.setPen(QColor(COLORS["faint"]))
         painter.setFont(QFont("Microsoft YaHei UI", 8))
         painter.drawText(QPointF(area.left() + 4, area.top() - 7), title)
@@ -183,7 +319,13 @@ class MachineScene(QWidget):
         lane_w = (area.width() - inset * 2) / count
         for index in range(count):
             slot = first_slot + index
-            lane = QRectF(area.left() + inset + index * lane_w, area.top() + 6, max(1.0, lane_w - 2), area.height() - 12)
+            lane = QRectF(
+                area.left() + inset + index * lane_w,
+                area.top() + 6,
+                max(1.0, lane_w - 2),
+                area.height() - 12,
+            )
+            self._lane_rects[slot] = lane
             feeder = self._feeders.get(slot)
             component = self._components.get(feeder.component_id) if feeder else None
             self._draw_lane(painter, lane, slot, feeder, component)
@@ -197,9 +339,7 @@ class MachineScene(QWidget):
         component: Any,
     ) -> None:
         installed = feeder is not None and feeder.enabled
-        low = False
-        if feeder is not None:
-            low = feeder.is_empty or feeder.is_low
+        low = bool(feeder is not None and (feeder.is_empty or feeder.is_low))
         if installed and not low:
             fill = QColor(self.GREEN)
             fill.setAlpha(34)
@@ -217,55 +357,63 @@ class MachineScene(QWidget):
             border = QColor(self.DIM)
             text_color = QColor(COLORS["faint"])
             style = Qt.PenStyle.DashLine
+        if slot == self._hover_slot:
+            border = QColor(COLORS["accent"])
 
         painter.setPen(QPen(border, 1.2, style))
         painter.setBrush(fill)
         painter.drawRoundedRect(lane, 2.5, 2.5)
 
-        # 槽位号
+        # 槽位号（左上）与料带规格（右上）
         painter.setPen(QColor(COLORS["faint"]))
-        painter.setFont(QFont("Cascadia Mono", 7))
-        painter.drawText(
-            QRectF(lane.left(), lane.top() + 3, lane.width(), 10),
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-            f"{slot:02d}",
-        )
+        painter.setFont(QFont("Cascadia Mono", 6))
+        painter.drawText(QRectF(lane.left() + 1, lane.top() + 2, 10, 9), Qt.AlignmentFlag.AlignLeft, f"{slot:02d}")
+        if feeder is not None:
+            badge = QRectF(lane.right() - 13, lane.top() + 2, 12, 9)
+            badge_color = QColor(border)
+            badge_color.setAlpha(55)
+            painter.setPen(QPen(border, 0.7))
+            painter.setBrush(badge_color)
+            painter.drawRoundedRect(badge, 2, 2)
+            painter.setPen(QColor("#eaf6f9") if installed else QColor(COLORS["faint"]))
+            painter.setFont(QFont("Cascadia Mono", 6))
+            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, f"{feeder.tape_width_mm:g}")
 
         if feeder is None:
             return
-        label = self._feeder_label(feeder, component)
-        if not label:
-            return
-        painter.setPen(text_color)
-        font = QFont("Cascadia Mono", 8)
+        value, package = self._feeder_texts(feeder, component)
+        label = value
+        if package and package.upper() not in value.upper():
+            combined = f"{value}-{package}" if value else package
+            font = QFont("Cascadia Mono", 7)
+            metrics = QFontMetrics(font)
+            height = int(lane.height() - 22)
+            label = combined if metrics.horizontalAdvance(combined) <= height else (value or package)
+        else:
+            font = QFont("Cascadia Mono", 7)
+            metrics = QFontMetrics(font)
+            height = int(lane.height() - 22)
         painter.setFont(font)
-        metrics = QFontMetrics(font)
-        text = metrics.elidedText(label, Qt.TextElideMode.ElideRight, int(lane.height() - 16))
-        painter.save()
-        painter.translate(lane.center().x() + 4, lane.bottom() - 7)
-        painter.rotate(-90)
-        painter.drawText(QPointF(0, 0), text)
-        painter.restore()
+        painter.setPen(text_color)
+        if label:
+            painter.save()
+            painter.translate(lane.center().x(), lane.bottom() - 5)
+            painter.rotate(-90)
+            painter.drawText(QPointF(0, 0), metrics.elidedText(label, Qt.TextElideMode.ElideRight, height))
+            painter.restore()
 
     @staticmethod
-    def _feeder_label(feeder: Any, component: Any) -> str:
-        import re
-
-        def compact(text: str) -> str:
-            return re.sub(r"[^A-Za-z0-9]", "", text or "").upper()
-
-        raw = (feeder.label or "").strip()
-        if "·" in raw:
-            raw = raw.split("·")[-1].strip()
-        if not raw and component is not None:
-            raw = str(component.name)
+    def _feeder_texts(feeder: Any, component: Any) -> tuple[str, str]:
+        value = ""
+        if component is not None:
+            value = str(getattr(component, "value", "") or "")
+        if not value:
+            raw = (feeder.label or "").strip()
+            if "·" in raw:
+                raw = raw.split("·")[-1].strip()
+            value = raw or (str(component.name) if component is not None else "")
         package = str(getattr(component, "package", "") or "")
-        compact_package = compact(package)
-        compact_raw = compact(raw)
-        if package and compact_package not in compact_raw:
-            if not (len(raw) <= 5 and compact_package.startswith(compact_raw[:3])):
-                raw = f"{raw}-{package}"
-        return raw
+        return value, package
 
     # ---------------- 底板 ----------------
 
@@ -274,7 +422,6 @@ class MachineScene(QWidget):
         painter.setBrush(QColor("#0a1216"))
         painter.drawRoundedRect(bed, 6, 6)
 
-        # 吸附孔阵列
         painter.setPen(QPen(QColor(255, 255, 255, 22), 1))
         step = max(12, int(bed.width() / 46))
         y = bed.top() + 10
@@ -298,7 +445,6 @@ class MachineScene(QWidget):
                 bed.bottom() - max(0.0, min(1.0, my / travel_y)) * bed.height(),
             )
 
-        # 产品板框
         product = self._product
         if product is not None:
             top_left = to_bed(product.board_origin_x_mm, product.board_origin_y_mm + product.board_height_mm)
@@ -329,7 +475,6 @@ class MachineScene(QWidget):
                 )
                 painter.drawEllipse(point, 3.2, 3.2)
 
-        # 底部相机孔（对应实物照片中的圆孔）
         hole = QPointF(bed.center().x(), bed.bottom() - bed.height() * 0.18)
         painter.setPen(QPen(QColor("#3a5663"), 1.2))
         painter.setBrush(QColor("#05090b"))
@@ -338,33 +483,6 @@ class MachineScene(QWidget):
         painter.drawEllipse(hole, 11, 11)
         painter.drawEllipse(hole, 4.5, 4.5)
 
-        # 龙门与贴装头
-        head_x, head_y, _ = self._head
-        raw = to_bed(head_x, head_y)
-        carriage = QPointF(
-            max(bed.left() + 24.0, min(bed.right() - 24.0, raw.x())),
-            max(bed.top() + 24.0, min(bed.bottom() - 24.0, raw.y())),
-        )
-        painter.setPen(QPen(QColor("#3f6270"), 3.0))
-        painter.drawLine(QPointF(bed.left() + 4, carriage.y()), QPointF(bed.right() - 4, carriage.y()))
-        painter.setPen(QPen(QColor("#243d49"), 1.0, Qt.PenStyle.DashLine))
-        painter.drawLine(QPointF(carriage.x(), bed.top() + 4), QPointF(carriage.x(), bed.bottom() - 4))
-        painter.setPen(QPen(QColor(COLORS["accent"]), 1.2, Qt.PenStyle.DashLine))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(carriage, 22, 22)
-        painter.setPen(QPen(QColor(COLORS["accent"]), 1.4))
-        painter.setBrush(QColor("#12232b"))
-        painter.drawRoundedRect(QRectF(carriage.x() - 16, carriage.y() - 9, 32, 18), 3, 3)
-        nozzle_count = max(1, len(self._profile.nozzle_ids())) if self._profile else 1
-        for index in range(min(nozzle_count, 4)):
-            offset = (index - (min(nozzle_count, 4) - 1) / 2) * 8
-            painter.setBrush(QColor("#c9d6dc"))
-            painter.drawEllipse(QPointF(carriage.x() + offset, carriage.y() + 13), 2.4, 2.4)
-        painter.setPen(QColor(COLORS["accent"]))
-        painter.setFont(QFont("Cascadia Mono", 7))
-        painter.drawText(QPointF(carriage.x() + 26, carriage.y() - 16), "HEAD")
-
-        # 坐标轴示意
         painter.setPen(QPen(QColor(COLORS["faint"]), 1))
         painter.setFont(QFont("Cascadia Mono", 7))
         painter.drawText(QPointF(bed.left() + 8, bed.top() + 14), f"X 0–{travel_x:.0f} mm")
@@ -374,16 +492,95 @@ class MachineScene(QWidget):
         painter.drawText(QPointF(0, 0), f"Y 0–{travel_y:.0f} mm")
         painter.restore()
 
+    def _draw_head(self, painter: QPainter, frame: QRectF) -> None:
+        profile = self._profile
+        if profile is None:
+            return
+        limits = profile.limits()
+        travel_x = max(1.0, limits.travel_x_mm)
+        travel_y = max(1.0, limits.travel_y_mm)
+        inner = frame.adjusted(14, 14, -14, -14)
+        head_x, head_y, _ = self._head
+        x = inner.left() + max(0.0, min(1.0, head_x / travel_x)) * inner.width()
+        y = inner.bottom() - max(0.0, min(1.0, head_y / travel_y)) * inner.height()
+
+        painter.setPen(QPen(QColor(63, 98, 112, 90), 1.2))
+        painter.drawLine(QPointF(inner.left() + 2, y), QPointF(inner.right() - 2, y))
+        painter.setPen(QPen(QColor("#243d49"), 1.0, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(x, inner.top() + 2), QPointF(x, inner.bottom() - 2))
+
+        painter.setPen(QPen(QColor(COLORS["accent"]), 1.2, Qt.PenStyle.DashLine))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QPointF(x, y), 20, 20)
+        painter.setPen(QPen(QColor(COLORS["accent"]), 1.4))
+        painter.setBrush(QColor("#12232b"))
+        painter.drawRoundedRect(QRectF(x - 16, y - 9, 32, 18), 3, 3)
+        nozzle_count = max(1, len(profile.nozzle_ids()))
+        for index in range(min(nozzle_count, 4)):
+            offset = (index - (min(nozzle_count, 4) - 1) / 2) * 8
+            painter.setBrush(QColor("#c9d6dc"))
+            painter.drawEllipse(QPointF(x + offset, y + 13), 2.4, 2.4)
+
+    # ---------------- 交互 ----------------
+
+    def _slot_at(self, position: QPointF) -> int:
+        for slot, rect in self._lane_rects.items():
+            if rect.contains(position):
+                return slot
+        return 0
+
+    def mouseMoveEvent(self, event: Any) -> None:  # noqa: N802
+        slot = self._slot_at(event.position())
+        if slot != self._hover_slot:
+            self._hover_slot = slot
+            self.setCursor(Qt.CursorShape.PointingHandCursor if slot else Qt.CursorShape.ArrowCursor)
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event: Any) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            slot = self._slot_at(event.position())
+            if slot:
+                self._activate_slot(slot)
+        super().mousePressEvent(event)
+
+    def _activate_slot(self, slot: int) -> None:
+        feeder = self._feeders.get(slot)
+        if not self._connected:
+            self.ctx.toast("设备未连接，无法移动到飞达", "warning")
+            return
+        if feeder is None:
+            self.ctx.toast(f"{slot:02d} 号槽位未装载供料器", "warning")
+            return
+        if not feeder.enabled:
+            self.ctx.toast(f"{slot:02d} 号供料器已停用", "warning")
+            return
+        x = float(feeder.pick_x_mm)
+        y = float(feeder.pick_y_mm)
+        if abs(x) < 1e-6 and abs(y) < 1e-6:
+            x, y = self._profile.feeders.slot_position(slot)
+        z = float(self.ctx.settings.safe_z_mm)
+        self.ctx.machine.move_to(x, y, z)
+        self.ctx.log("INFO", "MACHINE", f"移动到 {slot:02d} 号飞达取料点 ({x:.1f}, {y:.1f})")
+        self.ctx.toast(f"移动到 {slot:02d} 号飞达 ({x:.1f}, {y:.1f})", "info")
+
 
 # ---------------------------------------------------------------- 首页
 
 
 class HomePage(QWidget):
+    STEP_VALUES = [100.0, 10.0, 1.0, 0.1, 0.01]
+
     def __init__(self, ctx: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self._camera_mode = "top"
-        self._last_camera = 0.0
+        self._step = 0.1
+        self._speed_pct = 40.0
+        self._target = "left"
+        self._vacuum_by_nozzle: dict[str, bool] = {}
+        self._total_nozzles = max(1, len(ctx.profile.nozzle_ids()))
+        self._nozzle_ids = ctx.profile.nozzle_ids()
         self._build()
         self._connect()
         self._on_connection(self.ctx.connected, "")
@@ -429,7 +626,6 @@ class HomePage(QWidget):
 
         content = QHBoxLayout()
         content.setSpacing(12)
-
         left = QVBoxLayout()
         left.setSpacing(12)
 
@@ -455,15 +651,14 @@ class HomePage(QWidget):
         camera_top.addWidget(self.camera_chip)
         camera_card.body.addLayout(camera_top)
         self.camera_view = CameraView()
-        self.camera_view.setMinimumHeight(230)
+        self.camera_view.setMinimumHeight(220)
         camera_card.body.addWidget(self.camera_view, 1)
         self.camera_hint = QLabel("")
         self.camera_hint.setProperty("role", "hint")
         self.camera_hint.setWordWrap(True)
         camera_card.body.addWidget(self.camera_hint)
         left.addWidget(camera_card, 5)
-
-        left.addWidget(self._build_jog_card(), 4)
+        left.addWidget(self._build_jog_card(), 5)
         content.addLayout(left, 5)
 
         scene_card = Card(padding=12)
@@ -488,18 +683,18 @@ class HomePage(QWidget):
         ):
             legend.addWidget(self._legend_item(text, color, dashed))
         legend.addStretch(1)
-        tip = QLabel("点击左上设备图片可切换机型")
+        tip = QLabel("单击飞达可移动吸嘴 · 点击左上设备图切换机型")
         tip.setProperty("role", "faint")
         legend.addWidget(tip)
         scene_card.body.addLayout(legend)
         content.addWidget(scene_card, 7)
-
         outer.addLayout(content, 1)
 
         self.connect_button.clicked.connect(self._open_connect)
         self.banner_button.clicked.connect(self._open_connect)
         self.camera_top_button.clicked.connect(lambda: self._set_camera("top"))
         self.camera_bottom_button.clicked.connect(lambda: self._set_camera("bottom"))
+        self.vacuum_button.clicked.connect(self._toggle_vacuum)
 
     def _build_jog_card(self) -> Card:
         card = Card(padding=12)
@@ -508,68 +703,16 @@ class HomePage(QWidget):
         title.setProperty("role", "section")
         top.addWidget(title)
         top.addStretch(1)
-        self.jog_speed_label = QLabel("40%")
-        self.jog_speed_label.setProperty("role", "mono")
-        self.jog_speed = QSlider(Qt.Orientation.Horizontal)
-        self.jog_speed.setRange(10, 100)
-        self.jog_speed.setValue(40)
-        self.jog_speed.setFixedWidth(110)
-        self.jog_speed.valueChanged.connect(lambda value: self.jog_speed_label.setText(f"{value}%"))
-        top.addWidget(QLabel("速度"))
-        top.addWidget(self.jog_speed)
-        top.addWidget(self.jog_speed_label)
+        self.step_label = QLabel("步距 0.1 mm")
+        self.step_label.setProperty("role", "mono")
+        top.addWidget(self.step_label)
         card.body.addLayout(top)
 
-        coords = QHBoxLayout()
-        coords.setSpacing(8)
-        self.coord_labels: dict[str, QLabel] = {}
-        for axis in ("X", "Y", "Z"):
-            box = QWidget()
-            set_css(box, "inset")
-            box_layout = QHBoxLayout(box)
-            box_layout.setContentsMargins(10, 4, 10, 4)
-            box_layout.setSpacing(6)
-            name = QLabel(axis)
-            name.setStyleSheet(f"color: {COLORS['faint']}; font-weight: 700; font-size: 11px;")
-            value = QLabel("0.00")
-            value.setStyleSheet("font-family: 'Cascadia Mono'; font-size: 16px; font-weight: 600;")
-            box_layout.addWidget(name)
-            box_layout.addWidget(value)
-            box_layout.addStretch(1)
-            self.coord_labels[axis] = value
-            coords.addWidget(box, 1)
-        card.body.addLayout(coords)
+        body = QHBoxLayout()
+        body.setSpacing(14)
 
-        step_row = QHBoxLayout()
-        step_row.setSpacing(6)
-        step_label = QLabel("步长")
-        step_label.setProperty("role", "muted")
-        step_row.addWidget(step_label)
-        self.step_group = QButtonGroup(self)
-        self.step_group.setExclusive(True)
-        self._step = 1.0
-        for step in (0.1, 1.0, 10.0):
-            control = button(f"{step:g}", variant="subtle")
-            control.setProperty("segment", "true")
-            control.setCheckable(True)
-            control.setFixedSize(48, 26)
-            if step == 1.0:
-                control.setChecked(True)
-            control.clicked.connect(lambda checked=False, value=step: self._set_step(value))
-            self.step_group.addButton(control)
-            step_row.addWidget(control)
-        step_row.addSpacing(6)
-        step_row.addWidget(QLabel("mm"))
-        step_row.addStretch(1)
-        self.vacuum_button = button("真空", "zap", "subtle")
-        self.vacuum_button.setCheckable(True)
-        self.vacuum_button.setFixedHeight(26)
-        self.vacuum_button.setMinimumWidth(66)
-        step_row.addWidget(self.vacuum_button)
-        card.body.addLayout(step_row)
-
-        pad = QHBoxLayout()
-        pad.setSpacing(10)
+        left_col = QVBoxLayout()
+        left_col.setSpacing(8)
         grid = QGridLayout()
         grid.setSpacing(6)
         self._jog_buttons: list[Any] = []
@@ -582,7 +725,7 @@ class HomePage(QWidget):
         ):
             control = button("", icon_name, "subtle")
             control.setProperty("jog", "true")
-            control.setMinimumSize(52, 40)
+            control.setMinimumSize(54, 42)
             control.setIconSize(QSize(18, 18))
             control.setToolTip(label)
             if direction is None:
@@ -598,18 +741,77 @@ class HomePage(QWidget):
             self._jog_buttons.append(control)
 
         z_up = button("Z+", "arrow-up", "subtle")
+        z_home = button("", "home", "subtle")
         z_down = button("Z-", "arrow-down", "subtle")
-        for index, (control, sign) in enumerate(((z_up, 1), (z_down, -1))):
-            control.setMinimumSize(52, 40)
-            control.setToolTip(f"Z{'轴上升' if sign > 0 else '轴下降'}")
-            control.clicked.connect(
-                lambda checked=False, s=sign: self._jog(0.0, 0.0, s * self._step)
-            )
-            grid.addWidget(control, index, 3)
+        z_home.setToolTip("Z 轴单独归位")
+        for row, control in enumerate((z_up, z_home, z_down)):
+            control.setMinimumSize(54, 42)
+            grid.addWidget(control, row, 3)
             self._jog_buttons.append(control)
-        pad.addLayout(grid)
-        pad.addStretch(1)
-        card.body.addLayout(pad)
+        z_up.clicked.connect(lambda: self._jog(0.0, 0.0, self._step))
+        z_down.clicked.connect(lambda: self._jog(0.0, 0.0, -self._step))
+        z_home.clicked.connect(self._home_z)
+        left_col.addLayout(grid)
+
+        target_row = QHBoxLayout()
+        target_row.setSpacing(6)
+        self.target_group = QButtonGroup(self)
+        self.target_group.setExclusive(True)
+        self.target_buttons: dict[str, Any] = {}
+        target_defs = (
+            ("left", f"左吸嘴 {self._nozzle_ids[0] if self._nozzle_ids else 'N1'}"),
+            ("right", f"右吸嘴 {self._nozzle_ids[1] if len(self._nozzle_ids) > 1 else 'N2'}"),
+            ("camera", "顶部相机"),
+        )
+        for key, label in target_defs:
+            control = button(label, variant="subtle")
+            control.setProperty("segment", "true")
+            control.setCheckable(True)
+            control.setFixedHeight(28)
+            control.clicked.connect(lambda checked=False, name=key: self._set_target(name))
+            self.target_group.addButton(control)
+            self.target_buttons[key] = control
+            target_row.addWidget(control)
+        self.target_buttons["left"].setChecked(True)
+        if self._total_nozzles < 2:
+            self.target_buttons["right"].setEnabled(False)
+        left_col.addLayout(target_row)
+
+        vacuum_row = QHBoxLayout()
+        vacuum_row.setSpacing(8)
+        self.vacuum_button = button("真空", "zap", "subtle")
+        self.vacuum_button.setCheckable(True)
+        self.vacuum_button.setFixedHeight(28)
+        self.vacuum_button.setMinimumWidth(88)
+        vacuum_row.addWidget(self.vacuum_button)
+        self.target_hint = QLabel("真空跟随所选吸嘴")
+        self.target_hint.setProperty("role", "faint")
+        vacuum_row.addWidget(self.target_hint)
+        vacuum_row.addStretch(1)
+        left_col.addLayout(vacuum_row)
+        left_col.addStretch(1)
+        body.addLayout(left_col, 1)
+
+        scales = QHBoxLayout()
+        scales.setSpacing(10)
+        self.step_scale = VerticalScale(
+            "距离/角度\n[mm/deg]",
+            ["100", "10", "1.0", "0.1", "0.01"],
+            self.STEP_VALUES,
+            index=3,
+        )
+        self.step_scale.valueChanged.connect(self._on_step_changed)
+        self.speed_scale = VerticalScale(
+            "全局速度\n[%]",
+            ["100", "75", "50", "25", "0"],
+            continuous=True,
+        )
+        self.speed_scale.set_value(self._speed_pct)
+        self.speed_scale.valueChanged.connect(self._on_speed_changed)
+        scales.addWidget(self.step_scale)
+        scales.addWidget(self.speed_scale)
+        body.addLayout(scales)
+        card.body.addLayout(body)
 
         self.jog_hint = QLabel("连接设备后可点动；生产运行时手动轴控被锁定。")
         self.jog_hint.setProperty("role", "faint")
@@ -638,7 +840,7 @@ class HomePage(QWidget):
         self.ctx.machine.connection_changed.connect(self._on_connection)
         self.ctx.machine.state_changed.connect(self._on_state)
         self.ctx.machine.position_changed.connect(self._on_position)
-        self.ctx.machine.vacuum_changed.connect(self._on_vacuum)
+        self.ctx.machine.vacuum_state.connect(self._on_vacuum_state)
         self.ctx.signals.feeders_changed.connect(self.refresh)
         self.ctx.signals.components_changed.connect(self.refresh)
         self.ctx.signals.product_changed.connect(lambda *_: self.refresh())
@@ -679,7 +881,9 @@ class HomePage(QWidget):
         self.connect_button.setText("重新连接" if connected else "连接设备")
         for control in self._jog_buttons:
             control.setEnabled(connected)
-        self.vacuum_button.setEnabled(connected)
+        self.vacuum_button.setEnabled(connected and self._target != "camera")
+        for key, control in self.target_buttons.items():
+            control.setEnabled(connected)
         self.jog_hint.setText(
             "点动已启用；生产运行时手动轴控会被锁定。"
             if connected
@@ -700,26 +904,26 @@ class HomePage(QWidget):
             state = MachineState.OFFLINE
         color = state_color(state)
         label = state_label(state)
-        self.state_chip.setText(label)
-        self.state_chip.setStyleSheet(
-            f"background: {color}16; border: 1px solid {color}55; color: {color};"
-            "border-radius: 10px; padding: 3px 9px; font-size: 11px;"
-        )
-        self.scene_state.setText(label)
-        self.scene_state.setStyleSheet(
-            f"background: {color}16; border: 1px solid {color}55; color: {color};"
-            "border-radius: 10px; padding: 3px 9px; font-size: 11px;"
-        )
+        for chip in (self.state_chip, self.scene_state):
+            chip.setText(label)
+            chip.setStyleSheet(
+                f"background: {color}16; border: 1px solid {color}55; color: {color};"
+                "border-radius: 10px; padding: 3px 9px; font-size: 11px;"
+            )
 
     def _on_position(self, x: float, y: float, z: float) -> None:
-        self.coord_labels["X"].setText(f"{x:6.2f}")
-        self.coord_labels["Y"].setText(f"{y:6.2f}")
-        self.coord_labels["Z"].setText(f"{z:5.2f}")
         self.scene.set_head(x, y, z)
 
-    def _on_vacuum(self, on: bool) -> None:
-        self.vacuum_button.setChecked(on)
-        self.vacuum_button.setText("真空开" if on else "真空")
+    def _on_vacuum_state(self, nozzle: str, on: bool) -> None:
+        if nozzle:
+            self._vacuum_by_nozzle[nozzle] = on
+        else:
+            for key in self._nozzle_ids:
+                self._vacuum_by_nozzle[key] = on
+        active = self._active_nozzle()
+        if not nozzle or nozzle == active:
+            self.vacuum_button.setChecked(bool(self._vacuum_by_nozzle.get(active, False)))
+            self.vacuum_button.setText("真空开" if self.vacuum_button.isChecked() else "真空")
 
     # ---------------- 相机 ----------------
 
@@ -805,16 +1009,40 @@ class HomePage(QWidget):
 
     # ---------------- 操作 ----------------
 
-    def _set_step(self, value: float) -> None:
-        self._step = value
-        for action in self._jog_buttons:
-            action.setToolTip(f"点动步长 {value:g} mm")
+    def _active_nozzle(self) -> str:
+        if self._target == "right" and len(self._nozzle_ids) > 1:
+            return self._nozzle_ids[1]
+        return self._nozzle_ids[0] if self._nozzle_ids else "N1"
+
+    def _set_target(self, target: str) -> None:
+        self._target = target
+        self.target_buttons[target].setChecked(True)
+        if target == "camera":
+            self.vacuum_button.setEnabled(False)
+            self.target_hint.setText("顶部相机：真空控制已禁用")
+            self._set_camera("top")
+            return
+        nozzle = self._active_nozzle()
+        self.vacuum_button.setEnabled(self.ctx.connected)
+        self.vacuum_button.setChecked(bool(self._vacuum_by_nozzle.get(nozzle, False)))
+        self.vacuum_button.setText("真空开" if self.vacuum_button.isChecked() else "真空")
+        self.target_hint.setText(f"真空跟随 {nozzle}")
+        if self.ctx.connected:
+            self.ctx.machine.nozzle(nozzle)
+
+    def _on_step_changed(self, value: float) -> None:
+        self._step = float(value)
+        unit = "mm"
+        self.step_label.setText(f"步距 {value:g} {unit}")
+
+    def _on_speed_changed(self, value: float) -> None:
+        self._speed_pct = float(value)
 
     def _jog(self, dx: float, dy: float, dz: float) -> None:
         if not self.ctx.connected:
             self.ctx.toast("设备未连接", "warning")
             return
-        speed = self.ctx.settings.max_speed_mm_s * self.jog_speed.value() / 100.0
+        speed = self.ctx.settings.max_speed_mm_s * self._speed_pct / 100.0
         self.ctx.machine.jog(dx=dx, dy=dy, dz=dz, speed=speed)
 
     def _home(self) -> None:
@@ -822,6 +1050,12 @@ class HomePage(QWidget):
             self.ctx.toast("设备未连接", "warning")
             return
         self.ctx.machine.home()
+
+    def _home_z(self) -> None:
+        if not self.ctx.connected:
+            self.ctx.toast("设备未连接", "warning")
+            return
+        self.ctx.machine.home_axis("z")
 
     def _open_connect(self) -> None:
         from ..connect_dialog import ConnectDialog
@@ -831,13 +1065,14 @@ class HomePage(QWidget):
         self._tick_camera()
 
     def _toggle_vacuum(self) -> None:
-        if not self.ctx.connected:
-            self.ctx.toast("设备未连接", "warning")
+        if not self.ctx.connected or self._target == "camera":
+            self.ctx.toast("设备未连接或当前为相机模式", "warning")
             self.vacuum_button.setChecked(False)
             return
-        self.ctx.machine.vacuum(self.vacuum_button.isChecked())
-
-    # ---------------- 兼容旧接口 ----------------
+        nozzle = self._active_nozzle()
+        on = self.vacuum_button.isChecked()
+        self.ctx.machine.vacuum(on, nozzle=nozzle)
+        self.target_hint.setText(f"{nozzle} 真空{'开' if on else '关'}")
 
     def _start_or_connect(self) -> None:
         if not self.ctx.connected:

@@ -54,20 +54,30 @@ class HomePageTests(unittest.TestCase):
         self.assertEqual(bank.bank_of(26), "bottom")
         self.assertEqual(bank.bank_of(50), "bottom")
 
-    def test_feeder_label_format(self) -> None:
+    def test_feeder_texts_show_value_and_package(self) -> None:
         feeder = Feeder(id="F1", slot=3, component_id="C1", label="03 · 10K")
-        component = Component(id="C1", name="10K", package="R0805")
-        self.assertEqual(MachineScene._feeder_label(feeder, component), "10K-R0805")
+        component = Component(id="C1", name="10K", package="R0805", value="10K")
+        value, package = MachineScene._feeder_texts(feeder, component)
+        self.assertEqual(value, "10K")
+        self.assertEqual(package, "R0805")
 
-    def test_feeder_label_avoids_duplicate_package(self) -> None:
+    def test_feeder_texts_fall_back_to_label(self) -> None:
         feeder = Feeder(id="F1", slot=4, component_id="C1", label="04 · SOP8")
         component = Component(id="C1", name="SOP8", package="SOP-8")
-        self.assertEqual(MachineScene._feeder_label(feeder, component), "SOP8")
+        value, package = MachineScene._feeder_texts(feeder, component)
+        self.assertEqual(value, "SOP8")
+        self.assertEqual(package, "SOP-8")
 
     def test_scene_paints(self) -> None:
         pixmap = self.page.scene.grab()
         self.assertFalse(pixmap.isNull())
         self.assertGreater(pixmap.width(), 300)
+
+    def test_step_scale_values(self) -> None:
+        self.assertEqual(self.page.step_scale.value(), 0.1)
+        self.page.step_scale._set_index(0)
+        self.assertEqual(self.page.step_scale.value(), 100.0)
+        self.assertAlmostEqual(self.page._step, 100.0)
 
     def test_camera_modes_switch(self) -> None:
         self.page._set_camera("top")

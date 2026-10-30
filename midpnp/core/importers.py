@@ -129,6 +129,7 @@ def _component_for(name: str, package: str) -> Component:
         vision_mode=vision,
         color="#8a939c",
         notes="由 CSV 自动创建",
+        value=name or package,
     )
 
 

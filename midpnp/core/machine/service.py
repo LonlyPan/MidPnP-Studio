@@ -35,6 +35,7 @@ class MachineService(QObject):
     state_changed = Signal(str)
     position_changed = Signal(float, float, float)
     vacuum_changed = Signal(bool)
+    vacuum_state = Signal(str, bool)
     telemetry = Signal(dict)
     log = Signal(str, str, str)
     run_started = Signal(dict)
@@ -265,14 +266,26 @@ class MachineService(QObject):
         self._set_state(MachineState.HOMING)
         self.command("home")
 
+    def home_axis(self, axis: str = "z") -> None:
+        """单轴归位（目前用于 Z 轴单独回零）。"""
+        if self._run_active:
+            self.notification.emit("生产进行中，无法回零", "warning")
+            return
+        if not self._connected:
+            self.notification.emit("设备未连接", "warning")
+            return
+        self._set_state(MachineState.HOMING)
+        self.log.emit("INFO", "MACHINE", f"{axis.upper()} 轴归位")
+        self._commands.put(("command", {"command": "home", "args": {"axis": axis}}))
+
     def jog(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, speed: float | None = None) -> None:
         self.command("jog", dx=dx, dy=dy, dz=dz, speed=speed)
 
     def move_to(self, x: float, y: float, z: float | None = None, speed: float | None = None) -> None:
         self.command("move", x=x, y=y, z=z, speed=speed)
 
-    def vacuum(self, on: bool) -> None:
-        self.command("vacuum", on=on)
+    def vacuum(self, on: bool, nozzle: str = "") -> None:
+        self.command("vacuum", on=on, nozzle=nozzle)
 
     def feed(self, slot: int, count: int = 1) -> None:
         self.command("feed", slot=slot, count=count)
@@ -312,6 +325,9 @@ class MachineService(QObject):
             result = self._backend.command(command, **args)
             if command == "status":
                 self._apply_status(result)
+            elif command == "home" and self.state is MachineState.HOMING:
+                # G-code 等驱动不会主动上报状态，home 命令成功即视为归位完成
+                self._set_state(MachineState.READY)
         except MachineError as exc:
             self.log.emit("ERROR", "MACHINE", str(exc))
             self.notification.emit(str(exc), "error")
@@ -594,7 +610,10 @@ class MachineService(QObject):
             }
             self._set_state(mapping.get(state, MachineState.READY))
         elif event == "vacuum":
-            self.vacuum_changed.emit(bool(data.get("on", False)))
+            on = bool(data.get("on", False))
+            nozzle = str(data.get("nozzle", "") or "")
+            self.vacuum_changed.emit(on)
+            self.vacuum_state.emit(nozzle, on)
         elif event == "log":
             self.log.emit(str(data.get("level", "INFO")), "MACHINE", str(data.get("message", "")))
         else:
@@ -615,7 +634,9 @@ class MachineService(QObject):
         self.position_changed.emit(
             float(status.get("x", 0)), float(status.get("y", 0)), float(status.get("z", 0))
         )
-        self.vacuum_changed.emit(bool(status.get("vacuum", False)))
+        vacuum = bool(status.get("vacuum", False))
+        self.vacuum_changed.emit(vacuum)
+        self.vacuum_state.emit("", vacuum)
 
     def _set_state(self, state: MachineState) -> None:
         with self._state_lock:

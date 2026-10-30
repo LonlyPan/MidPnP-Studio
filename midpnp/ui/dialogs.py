@@ -241,6 +241,11 @@ class FeederDialog(DialogShell):
         self.pitch.setDecimals(2)
         self.pitch.setSuffix(" mm")
         self.pitch.setValue(feeder.pitch_mm if feeder else 4.0)
+        self.tape_width = QSpinBox()
+        self.tape_width.setRange(4, 44)
+        self.tape_width.setSingleStep(4)
+        self.tape_width.setSuffix(" mm")
+        self.tape_width.setValue(feeder.tape_width_mm if feeder else 8)
         self.pick_x = self._coord(feeder.pick_x_mm if feeder else 40.0)
         self.pick_y = self._coord(feeder.pick_y_mm if feeder else 332.0)
         self.pick_z = self._coord(feeder.pick_z_mm if feeder else 0.0)
@@ -256,6 +261,7 @@ class FeederDialog(DialogShell):
         form.addRow("容量", self.capacity)
         form.addRow("余料", self.remaining)
         form.addRow("料带间距", self.pitch)
+        form.addRow("料带宽度", self.tape_width)
         form.addRow("取料 X", self.pick_x)
         form.addRow("取料 Y", self.pick_y)
         form.addRow("取料 Z", self.pick_z)
@@ -300,6 +306,7 @@ class FeederDialog(DialogShell):
             pick_z_mm=self.pick_z.value(),
             enabled=self.enabled.isChecked(),
             low_threshold_pct=self.low.value(),
+            tape_width_mm=self.tape_width.value(),
         )
 
 
@@ -313,6 +320,8 @@ class ComponentDialog(DialogShell):
         form.setSpacing(9)
         self.name = QLineEdit(component.name if component else "")
         self.name.setPlaceholderText("例如 电阻 0603")
+        self.value = QLineEdit(component.value if component else "")
+        self.value.setPlaceholderText("元件参数，例如 10K / 100nF / STM32G030")
         self.package = QLineEdit(component.package if component else "0603")
         self.length = self._dim(component.length_mm if component else 1.6)
         self.width = self._dim(component.width_mm if component else 0.8)
@@ -346,6 +355,7 @@ class ComponentDialog(DialogShell):
         color_row.addStretch(1)
         self.notes = QLineEdit(component.notes if component else "")
         form.addRow("名称", self.name)
+        form.addRow("参数值", self.value)
         form.addRow("封装", self.package)
         form.addRow("长度", self.length)
         form.addRow("宽度", self.width)
@@ -404,6 +414,7 @@ class ComponentDialog(DialogShell):
             speed_pct=self.speed.value(),
             color=self._color,
             notes=self.notes.text().strip(),
+            value=self.value.text().strip(),
         )
 
 

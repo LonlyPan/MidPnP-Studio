@@ -517,6 +517,7 @@ def _component_for(name: str, package: str, source: str) -> Component:
         package=cleaned_package,
         notes=f"由{source}自动创建",
         color="#8a939c",
+        value=cleaned_name,
     )
     return component
 

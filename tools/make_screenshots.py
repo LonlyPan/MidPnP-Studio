@@ -122,6 +122,12 @@ def main() -> int:
     QTest.qWait(1700)
     window.grab().save(str(out_dir / "10-production-running.png"))
     print("saved production-running")
+    deadline = time.monotonic() + 25.0
+    while service.run_active and time.monotonic() < deadline:
+        QTest.qWait(250)
+    QTest.qWait(400)
+    window.grab().save(str(out_dir / "11-production-complete.png"))
+    print("saved production-complete")
     service.stop()
     QTest.qWait(250)
 

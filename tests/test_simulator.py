@@ -51,6 +51,29 @@ class SimulatorTests(unittest.TestCase):
         self.assertTrue(placed["placed"])
         self.assertEqual(self.sim.command("status")["placed"], 1)
 
+    def test_z_only_home_keeps_xy(self) -> None:
+        self.sim.connect()
+        self.sim.command("move", x=12.0, y=34.0, z=5.0)
+        self.sim.command("home", axis="z")
+        status = self.sim.command("status")
+        self.assertAlmostEqual(status["x"], 12.0, places=2)
+        self.assertAlmostEqual(status["y"], 34.0, places=2)
+        self.assertAlmostEqual(status["z"], self.sim.limits.safe_z_mm, places=2)
+
+    def test_per_nozzle_vacuum(self) -> None:
+        self.sim.connect()
+        self.sim.command("vacuum", on=True, nozzle="N2")
+        events = [data for event, data in self.events if event == "vacuum"]
+        self.assertTrue(events[-1]["on"])
+        self.assertEqual(events[-1]["nozzle"], "N2")
+        self.assertTrue(self.sim.command("status")["vacuum"])
+        self.sim.command("vacuum", on=False, nozzle="N1")
+        self.assertEqual(self.sim._vacuum_by_nozzle["N1"], False)
+        self.assertEqual(self.sim._vacuum_by_nozzle["N2"], True)
+        self.assertTrue(self.sim.command("status")["vacuum"])
+        self.sim.command("vacuum", on=False, nozzle="N2")
+        self.assertFalse(self.sim.command("status")["vacuum"])
+
     def test_out_of_travel_rejected(self) -> None:
         self.sim.connect()
         with self.assertRaises(MachineError):

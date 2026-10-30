@@ -123,6 +123,7 @@ class Component:
     notes: str = ""
     package_id: str = ""
     match_score: float = 0.0
+    value: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -139,6 +140,7 @@ class Component:
             "notes": self.notes,
             "package_id": self.package_id,
             "match_score": round(self.match_score, 3),
+            "value": self.value,
         }
 
     @classmethod
@@ -161,6 +163,7 @@ class Component:
             notes=str(data.get("notes", "")),
             package_id=str(data.get("package_id", "")),
             match_score=float(data.get("match_score", 0.0)),
+            value=str(data.get("value", "")),
         )
 
 
@@ -178,6 +181,7 @@ class Feeder:
     pick_z_mm: float = 0.0
     enabled: bool = True
     low_threshold_pct: int = 15
+    tape_width_mm: int = 8
 
     @property
     def remaining_pct(self) -> int:
@@ -207,6 +211,7 @@ class Feeder:
             "pick_z_mm": self.pick_z_mm,
             "enabled": self.enabled,
             "low_threshold_pct": self.low_threshold_pct,
+            "tape_width_mm": self.tape_width_mm,
         }
 
     @classmethod
@@ -224,6 +229,7 @@ class Feeder:
             pick_z_mm=float(data.get("pick_z_mm", 0.0)),
             enabled=bool(data.get("enabled", True)),
             low_threshold_pct=int(data.get("low_threshold_pct", 15)),
+            tape_width_mm=int(data.get("tape_width_mm", 8)),
         )
 
 
