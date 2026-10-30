@@ -87,17 +87,22 @@ ERROR/ESTOP → (clear_fault) → READY
 
 ### 2.3 UI 层
 
-- 主窗口负责侧边导航、顶栏、状态栏、报警横幅、Toast。
+- 主窗口负责侧边导航、顶栏、状态栏、报警横幅、Toast；左上角设备卡显示设备
+  照片、连接状态与当前机型，点击打开设备画廊。
+- 首页 `HomePage`：左侧单相机画面（顶/底切换）+ Jog 点动，右侧 `MachineScene`
+  线稿总览（中间底板、上下各 25 个飞达、贴装头位置、产品板框）。
+- 连接 `ConnectDialog`：相机 → 主机 → 归位 → 自动校准 四步，状态来自
+  `MachineService` 的真实信号，成功后自动关闭。
 - 每个页面只依赖 `AppContext`，不直接访问其他页面。
 - 跨页面刷新走 `AppSignals`：`products_changed / components_changed / feeders_changed / log_added`。
 - 板卡画布 `BoardView` 支持板卡坐标与机器坐标两种视图、缩放、平移、贴装点选择、贴装状态着色、贴装头十字线。
-- 深色主题全部由 QSS 定义，图标由 QPainter 矢量生成，无外部图片依赖。
+- 深色主题全部由 QSS 定义，图标由 QPainter 矢量生成；设备照片放在 `assets/machines/`。
 
 ### 2.4 机型配置层
 
 机型是一等对象，不在 UI 里硬编码：
 
-- `MachineProfile` 聚合轴、头/吸嘴、相机、供料器布局、驱动、视觉与安全参数；
+- `MachineProfile` 聚合轴、头/吸嘴、相机、供料器布局（含上下飞达分区）、驱动、视觉与安全参数；
 - 内置模板在 `midpnp/data/profiles/*.json`，用户配置在 `<数据目录>/profiles/`，
   同 ID 时用户配置优先；
 - `AppContext` 启动时解析 `settings.machine_profile_id`，把机型投影到

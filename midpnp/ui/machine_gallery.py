@@ -10,7 +10,15 @@ import math
 from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -31,9 +39,10 @@ from ..core.profiles import (
     ProfileError,
     user_profiles_dir,
 )
+from .assets import asset_path
 from .context import AppContext
 from .theme import COLORS
-from .widgets import button, hline, make_chip
+from .widgets import StatusDot, button, hline, make_chip
 
 
 DRIVER_LABELS = {
@@ -55,6 +64,23 @@ def _accent(profile: MachineProfile) -> str:
     if profile.driver.type.startswith("gcode"):
         return COLORS["warn"]
     return "#4db8d8"
+
+
+_PIXMAP_CACHE: dict[str, QPixmap] = {}
+
+
+def machine_pixmap(profile: MachineProfile | None) -> QPixmap | None:
+    """加载机型配置里的设备照片；缺失时返回 None（退回矢量示意图）。"""
+    if profile is None or not profile.image:
+        return None
+    path = asset_path(profile.image)
+    if not path.exists():
+        return None
+    key = str(path)
+    if key not in _PIXMAP_CACHE:
+        _PIXMAP_CACHE[key] = QPixmap(key)
+    pixmap = _PIXMAP_CACHE[key]
+    return None if pixmap.isNull() else pixmap
 
 
 class MachineArt(QWidget):
@@ -95,6 +121,27 @@ class MachineArt(QWidget):
             painter.setPen(QColor(COLORS["faint"]))
             painter.setFont(QFont("Microsoft YaHei UI", 9))
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "未选择机型")
+            painter.end()
+            return
+
+        pixmap = machine_pixmap(profile)
+        if pixmap is not None:
+            painter.save()
+            clip = QPainterPath()
+            clip.addRoundedRect(rect.adjusted(1, 1, -1, -1), 7, 7)
+            painter.setClipPath(clip)
+            scaled = pixmap.scaled(
+                max(1, int(width - 10)),
+                max(1, int(height - 8)),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.drawPixmap(
+                int((width - scaled.width()) / 2),
+                int((height - scaled.height()) / 2),
+                scaled,
+            )
+            painter.restore()
             painter.end()
             return
 
@@ -632,3 +679,82 @@ def select_machine(
     if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_profile is not None:
         return dialog.selected_profile
     return None
+
+
+class DeviceCard(QFrame):
+    """侧边栏设备卡：设备照片 + 状态，点击打开设备画廊。"""
+
+    clicked = Signal()
+
+    def __init__(self, profile: MachineProfile, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._profile = profile
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setObjectName("deviceCard")
+        self.setStyleSheet(
+            f"""
+            QFrame#deviceCard {{
+                background: #0b151b;
+                border: 1px solid {COLORS['border_soft']};
+                border-radius: 8px;
+            }}
+            QFrame#deviceCard:hover {{
+                border: 1px solid {COLORS['accent']}66;
+                background: #0e1c24;
+            }}
+            """
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 7)
+        layout.setSpacing(5)
+        self.art = MachineArt(profile)
+        self.art.setFixedHeight(100)
+        layout.addWidget(self.art)
+
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        self.dot = StatusDot(COLORS["muted"], 7)
+        self.state = QLabel("设备离线")
+        self.state.setStyleSheet("font-size: 11px; font-weight: 600;")
+        top.addWidget(self.dot)
+        top.addWidget(self.state)
+        top.addStretch(1)
+        self.shift = QLabel("白班")
+        self.shift.setStyleSheet(
+            f"color: {COLORS['muted']}; font-size: 9px; border: 1px solid {COLORS['border']};"
+            "border-radius: 7px; padding: 0px 5px;"
+        )
+        top.addWidget(self.shift)
+        layout.addLayout(top)
+
+        self.name = QLabel(profile.name)
+        self.name.setWordWrap(True)
+        self.name.setStyleSheet("font-size: 10px; color: #a9bbc5;")
+        self.name.setToolTip(profile.name)
+        layout.addWidget(self.name)
+
+        self.conn = QLabel("未连接")
+        self.conn.setStyleSheet(f"color: {COLORS['faint']}; font-size: 9px;")
+        layout.addWidget(self.conn)
+
+        hint = QLabel("点击图片切换设备")
+        hint.setStyleSheet(f"color: {COLORS['faint']}; font-size: 9px;")
+        layout.addWidget(hint)
+
+    def set_profile(self, profile: MachineProfile) -> None:
+        self._profile = profile
+        self.art.set_profile(profile)
+        self.name.setText(profile.name)
+        self.name.setToolTip(profile.name)
+
+    def set_connection(self, label: str) -> None:
+        text = label or "未连接"
+        if len(text) > 26:
+            text = text[:24] + "…"
+        self.conn.setText(text)
+        self.conn.setToolTip(label)
+
+    def mouseReleaseEvent(self, event: Any) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)

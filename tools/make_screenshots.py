@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -23,6 +24,7 @@ from midpnp.core.machine.service import MachineService  # noqa: E402
 from midpnp.core.storage import Storage  # noqa: E402
 from midpnp.paths import AppPaths  # noqa: E402
 from midpnp.ui.context import AppContext  # noqa: E402
+from midpnp.ui.connect_dialog import ConnectDialog  # noqa: E402
 from midpnp.ui.main_window import MainWindow  # noqa: E402
 from midpnp.ui.machine_gallery import MachineGalleryDialog  # noqa: E402
 from midpnp.ui.theme import STYLESHEET  # noqa: E402
@@ -44,6 +46,7 @@ def main() -> int:
     storage = Storage(paths.database)
     storage.seed_demo()
     settings = load_settings(paths.settings)
+    settings.auto_connect = False
     service = MachineService()
     ctx = AppContext(paths, storage, settings, service)
     window = MainWindow(ctx)
@@ -59,8 +62,20 @@ def main() -> int:
     print("saved 13-machine-gallery")
     gallery.reject()
 
+    # 连接流程弹窗：截取“正在进行”的状态，然后等它自动完成
+    connect = ConnectDialog(ctx, parent=window)
+    connect.show()
+    QTest.qWait(1300)
+    connect.grab().save(str(out_dir / "14-connect.png"))
+    print("saved 14-connect")
+    deadline = time.monotonic() + 8.0
+    while connect.result() == 0 and time.monotonic() < deadline:
+        QTest.qWait(150)
+    QTest.qWait(500)
+    window.toast.hide()
+
     pages = [
-        ("dashboard", "01-dashboard"),
+        ("home", "01-home"),
         ("production", "02-production"),
         ("programming", "03-programming"),
         ("feeders", "04-feeders"),

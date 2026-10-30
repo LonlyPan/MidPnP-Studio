@@ -39,8 +39,8 @@ class ProfileTests(unittest.TestCase):
         self.assertAlmostEqual(limits.travel_x_mm, 420.0)
         self.assertAlmostEqual(limits.travel_y_mm, 360.0)
         self.assertAlmostEqual(limits.safe_z_mm, 12.0)
-        self.assertEqual(limits.nozzle_count, 4)
-        self.assertEqual(len(profile.nozzle_ids()), 4)
+        self.assertEqual(limits.nozzle_count, 2)
+        self.assertEqual(len(profile.nozzle_ids()), 2)
 
     def test_settings_projection(self) -> None:
         profile = self.library.get("gcode-3axis")
@@ -99,8 +99,8 @@ class ProfileTests(unittest.TestCase):
 
     def test_summary(self) -> None:
         summary = profile_summary(self.library.get("sim-desktop"))
-        self.assertEqual(summary["nozzles"], 4)
-        self.assertEqual(summary["feeders"], 32)
+        self.assertEqual(summary["nozzles"], 2)
+        self.assertEqual(summary["feeders"], 50)
         self.assertEqual(summary["driver"], "simulator")
 
 

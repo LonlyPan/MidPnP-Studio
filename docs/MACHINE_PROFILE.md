@@ -22,7 +22,7 @@
 1. **图形化画廊（推荐）**：首次启动会自动弹出「选择你的设备」；之后从
    **系统设置 → 机型配置 → 更换 / 添加设备** 打开同一个画廊。点卡片预览，
    双击或点「使用此机型」确认；画廊里还能导入配置、另存副本、导出、删除。
-2. 界面：**系统设置 → 机型配置** → 更换设备；
+2. 界面：**系统设置 → 机型配置 → 更换 / 添加设备**，或点左上角设备照片；
 3. 手改 `settings.json` 的 `machine_profile_id`，重启程序。
 
 > 首次启动的判断条件是 `settings.json` 里既没有 `machine_profile_id`、
@@ -32,7 +32,7 @@
 
 | ID | 名称 | 用途 |
 | --- | --- | --- |
-| `sim-desktop` | 内置模拟机 · 单头 4 吸嘴 | 420×360、4 吸嘴、32 料站、双相机；默认模板，演示数据配套 |
+| `sim-desktop` | MidPnP M1 · 双吸嘴（模拟） | 420×360、2 吸嘴、上下各 25 飞达、双相机；默认模板，演示数据配套 |
 | `bench-single` | 桌面单吸嘴机 · 300×300 | 单吸嘴小台面，1 个俯视相机 |
 | `gcode-3axis` | G-code 三轴机 · 600×500（模板） | 演示 G-code 命令表 + TCP 链路 |
 | `dual-head-demo` | 双头四吸嘴 · 450×400（示例） | 演示多头配置结构 |
@@ -45,9 +45,10 @@
 {
   "schema": "midpnp.machine-profile/1",
   "id": "sim-desktop",
-  "name": "内置模拟机 · 单头 4 吸嘴",
+  "name": "MidPnP M1 · 双吸嘴（模拟）",
   "description": "…",
   "vendor": "MidPnP Studio",
+  "image": "machines/m1.png",
   "tags": ["simulator"],
   "axes": { "x": {…}, "y": {…}, "z": {…}, "c": {…} },
   "heads": [ { "id": "H1", "nozzles": [ {…} ] } ],
@@ -108,15 +109,27 @@
 ### 3.4 供料器 `feeders`
 
 ```jsonc
-{ "type": "slot", "slot_count": 32, "first_slot": 1,
-  "slot_pitch_mm": 12.0, "tape_pitch_mm": 4.0,
-  "origin": {"x": 18.0, "y": 330.0}, "direction": "x" }
+{ "type": "slot", "slot_count": 50, "first_slot": 1,
+  "slot_pitch_mm": 10.0, "tape_pitch_mm": 4.0,
+  "origin": {"x": 18.0, "y": 330.0}, "direction": "x",
+  "top_count": 25, "bottom_count": 25 }
 ```
 
-`origin` 是 1 号槽的取料点，`direction` 为 `x` 或 `y`。新建供料器时可据此自动
-推算槽位坐标（当前界面仍支持手填取料坐标）。
+`origin` 是 1 号槽的取料点，`direction` 为 `x` 或 `y`。
+`top_count` / `bottom_count` 描述上下两排飞达数量（M1 为各 25 个）：上排槽位
+`1..25`、下排 `26..50`；首页整机线稿按这个分区绘制，并按数据库中已装料，
+显示为绿色/黄色/虚线三种状态。为 0 时表示不分区，沿用 `slot_count`。
 
-### 3.5 驱动 `driver`
+### 3.5 设备图片 `image`
+
+```jsonc
+"image": "machines/m1.png"
+```
+
+相对 `assets/` 目录，会显示在侧边栏设备卡、设备画廊卡片和连接弹窗里；
+缺省时退回矢量示意图。图片建议用去白底的 PNG（透明背景）。
+
+### 3.6 驱动 `driver`
 
 | `type` | 链路 | 说明 |
 | --- | --- | --- |
@@ -140,7 +153,7 @@
 未提供的变量渲染为空串，便于“整段删除”。应答默认以 `ok_responses` 里的 token
 结束；同一行里出现 `error` 即抛错。`status` 命令会尝试解析 `X: Y: Z:`。
 
-### 3.6 视觉 `vision`
+### 3.7 视觉 `vision`
 
 ```jsonc
 "fiducial": { "search_radius_mm": 12, "threshold": 0.45, "min_area_mm2": 0.3,
@@ -149,7 +162,7 @@
               "min_score": 0.55, "correction": "both" }
 ```
 
-### 3.7 安全 `safety`
+### 3.8 安全 `safety`
 
 `safe_z_mm`、`max_speed_mm_s`、`soft_limits`、`estop`、`vacuum_settle_ms`。
 `estop: "software"` 只表示软件级停止，**不能替代硬件急停回路**。

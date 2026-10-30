@@ -37,7 +37,8 @@ $arguments = @(
     "--paths", ".",
     "--hidden-import", "serial",
     "--hidden-import", "serial.tools.list_ports",
-    "--add-data", "midpnp\data;midpnp\data"
+    "--add-data", "midpnp\data;midpnp\data",
+    "--add-data", "assets;assets"
 )
 foreach ($module in $exclude) {
     $arguments += @("--exclude-module", $module)
@@ -52,7 +53,7 @@ if (Test-Path "docs") {
     Copy-Item -LiteralPath "docs" -Destination "dist\MidPnPStudio\docs" -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path "release" | Out-Null
-$zip = "release\MidPnPStudio-v0.2.0-win64.zip"
+$zip = "release\MidPnPStudio-v0.3.0-win64.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 Compress-Archive -Path "dist\MidPnPStudio\*" -DestinationPath $zip -CompressionLevel Optimal
 

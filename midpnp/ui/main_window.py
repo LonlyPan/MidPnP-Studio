@@ -26,9 +26,10 @@ from .. import APP_NAME, APP_NAME_ZH, __version__
 from ..core.models import MachineState, RunRecord
 from .context import AppContext
 from .icons import app_icon, icon, nav_icon
+from .machine_gallery import DeviceCard, MachineGalleryDialog
 from .pages.components import ComponentsPage
-from .pages.dashboard import DashboardPage
 from .pages.feeders import FeedersPage
+from .pages.home import HomePage
 from .pages.logs import LogsPage
 from .pages.manual import ManualPage
 from .pages.packages import PackagesPage
@@ -42,7 +43,7 @@ from .widgets import StatusDot, Toast, set_css, vline
 
 
 NAV_ITEMS = [
-    ("dashboard", "生产总览", "dashboard", "运行"),
+    ("home", "首页", "home", "运行"),
     ("production", "生产执行", "production", "运行"),
     ("programming", "产品编程", "programming", "运行"),
     ("feeders", "供料器", "feeder", "运行"),
@@ -75,7 +76,7 @@ class MainWindow(QMainWindow):
         self._clock_timer.start(1000)
         self._tick_clock()
         QTimer.singleShot(700, self._auto_connect)
-        self.navigate("dashboard")
+        self.navigate("home")
 
     # ---------------- build ----------------
 
@@ -131,35 +132,15 @@ class MainWindow(QMainWindow):
         logo_row.addStretch(1)
         layout.addLayout(logo_row)
 
-        machine_card = QFrame()
-        set_css(machine_card, "inset")
-        machine_layout = QVBoxLayout(machine_card)
-        machine_layout.setContentsMargins(12, 10, 12, 10)
-        machine_layout.setSpacing(5)
-        top = QHBoxLayout()
-        top.setSpacing(6)
-        self.sidebar_dot = StatusDot(COLORS["muted"], 7)
-        top.addWidget(self.sidebar_dot)
-        self.sidebar_state = QLabel("设备离线")
-        self.sidebar_state.setStyleSheet("font-size: 12px; font-weight: 600;")
-        top.addWidget(self.sidebar_state)
-        top.addStretch(1)
-        self.shift_chip = QLabel("白班")
-        self.shift_chip.setStyleSheet(
-            f"color: {COLORS['muted']}; font-size: 9px; border: 1px solid {COLORS['border']};"
-            "border-radius: 7px; padding: 1px 6px;"
-        )
-        top.addWidget(self.shift_chip)
-        machine_layout.addLayout(top)
-        self.sidebar_machine = QLabel(self.ctx.settings.machine_name)
-        self.sidebar_machine.setStyleSheet("font-family: 'Cascadia Mono'; font-size: 11px; color: #a9bbc5;")
-        machine_layout.addWidget(self.sidebar_machine)
-        self.sidebar_conn = QLabel("未连接")
-        self.sidebar_conn.setStyleSheet(f"color: {COLORS['faint']}; font-size: 10px;")
-        machine_layout.addWidget(self.sidebar_conn)
         machine_wrap = QHBoxLayout()
         machine_wrap.setContentsMargins(14, 0, 14, 12)
-        machine_wrap.addWidget(machine_card)
+        self.device_card = DeviceCard(self.ctx.profile)
+        self.device_card.clicked.connect(self._switch_device)
+        self.sidebar_dot = self.device_card.dot
+        self.sidebar_state = self.device_card.state
+        self.sidebar_machine = self.device_card.name
+        self.sidebar_conn = self.device_card.conn
+        machine_wrap.addWidget(self.device_card)
         layout.addLayout(machine_wrap)
 
         group = ""
@@ -340,7 +321,7 @@ class MainWindow(QMainWindow):
         return label
 
     def _create_pages(self) -> None:
-        self.dashboard = DashboardPage(self.ctx)
+        self.home = HomePage(self.ctx)
         self.production = ProductionPage(self.ctx)
         self.programming = ProgrammingPage(self.ctx)
         self.feeders = FeedersPage(self.ctx)
@@ -351,7 +332,7 @@ class MainWindow(QMainWindow):
         self.logs = LogsPage(self.ctx)
         self.settings = SettingsPage(self.ctx)
         for key, page in (
-            ("dashboard", self.dashboard),
+            ("home", self.home),
             ("production", self.production),
             ("programming", self.programming),
             ("feeders", self.feeders),
@@ -368,13 +349,14 @@ class MainWindow(QMainWindow):
     # ---------------- signals ----------------
 
     def _wire(self) -> None:
-        self.conn_button.clicked.connect(lambda: self.navigate("settings"))
+        self.conn_button.clicked.connect(self._on_conn_clicked)
         self.estop_button.clicked.connect(self._emergency_stop)
         self.ctx.signals.navigate.connect(self.navigate)
         self.ctx.signals.start_production.connect(self._start_production)
         self.ctx.signals.toast.connect(self.show_toast)
         self.ctx.signals.product_changed.connect(self._on_product_changed)
         self.ctx.signals.settings_changed.connect(self._on_settings_changed)
+        self.ctx.signals.profile_changed.connect(self._on_profile_changed)
 
         self.machine.connection_changed.connect(self._on_connection)
         self.machine.state_changed.connect(self._on_state)
@@ -396,11 +378,11 @@ class MainWindow(QMainWindow):
         item = next((item for item in NAV_ITEMS if item[0] == key), None)
         if item:
             self.crumb.setText(item[1])
-            self.crumb_sub.setText(f"工作区 / {self.ctx.settings.machine_name} / {item[1]}")
+            self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {item[1]}")
         if key == "logs":
             self.logs.refresh()
-        elif key == "dashboard":
-            self.dashboard.refresh()
+        elif key == "home":
+            self.home.refresh()
 
     def _start_production(self) -> None:
         self.navigate("production")
@@ -410,9 +392,9 @@ class MainWindow(QMainWindow):
 
     def _auto_connect(self) -> None:
         self.ctx.log("INFO", "APP", f"{APP_NAME} v{__version__} 已启动")
+        self._on_settings_changed()
         if self.ctx.settings.auto_connect and not self._connected:
             self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders(), self.ctx.profile)
-        self._on_settings_changed()
 
     def showEvent(self, event: Any) -> None:  # noqa: N802
         super().showEvent(event)
@@ -439,7 +421,8 @@ class MainWindow(QMainWindow):
         self.footer_conn.setText(label)
         self.sidebar_conn.setText(label)
         color = COLORS["accent"] if connected else COLORS["muted"]
-        self.conn_button.setText(f"  {label}" if connected else "  未连接")
+        self.conn_button.setText("  已连接" if connected else "  未连接")
+        self.conn_button.setToolTip(label)
         self.conn_button.setIcon(icon("wifi" if connected else "link", color, 15))
         self.conn_button.setStyleSheet(
             f"QPushButton {{ background: {color}0e; border: 1px solid {color}33;"
@@ -462,7 +445,7 @@ class MainWindow(QMainWindow):
         label = state_label(state)
         self.sidebar_dot.set_color(color)
         self.sidebar_state.setText(f"设备{label}" if state not in {MachineState.RUNNING, MachineState.PAUSED} else label)
-        self.sidebar_state.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {color};")
+        self.sidebar_state.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {color};")
         self.footer_dot.set_color(color)
         self.footer_state.setText(label)
         self.footer_state.setStyleSheet(f"font-size: 10px; font-weight: 600; color: {color};")
@@ -493,22 +476,61 @@ class MainWindow(QMainWindow):
     def _on_product_changed(self, product: Any) -> None:
         if product:
             self.footer_product.setText(f"{product.name} · REV {product.revision}")
-            self.crumb_sub.setText(f"工作区 / {self.ctx.settings.machine_name} / {self.crumb.text()}")
+            self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {self.crumb.text()}")
 
     def _on_settings_changed(self) -> None:
-        self.sidebar_machine.setText(self.ctx.settings.machine_name)
+        self.device_card.set_profile(self.ctx.profile)
         mode = {
             "simulator": "SIMULATION MODE",
             "tcp": "TCP MODE",
             "serial": "SERIAL MODE",
         }.get(self.ctx.settings.connection_mode, "OFFLINE MODE")
         self.mode_label.setText(mode)
-        self.crumb_sub.setText(f"工作区 / {self.ctx.settings.machine_name} / {self.crumb.text()}")
+        self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {self.crumb.text()}")
         self.footer_product.setText(
             f"{self.ctx.current_product.name} · REV {self.ctx.current_product.revision}"
             if self.ctx.current_product
             else ""
         )
+
+    def _on_profile_changed(self, profile: Any) -> None:
+        self.device_card.set_profile(self.ctx.profile)
+        self.crumb_sub.setText(f"工作区 / {self.ctx.profile.name} / {self.crumb.text()}")
+        self.ctx.toast(f"设备已切换：{self.ctx.profile.name}", "info")
+
+    def _on_conn_clicked(self) -> None:
+        if not self._connected:
+            self._open_connect_dialog()
+        else:
+            self.navigate("settings")
+
+    def _open_connect_dialog(self) -> None:
+        from .connect_dialog import ConnectDialog
+
+        dialog = ConnectDialog(self.ctx, parent=self)
+        dialog.exec()
+
+    def _switch_device(self) -> None:
+        if self.machine.run_active:
+            self.show_toast("生产运行中，无法切换设备", "warning")
+            return
+        dialog = MachineGalleryDialog(self.ctx, first_run=False, parent=self)
+        if not dialog.exec() or dialog.selected_profile is None:
+            return
+        profile = dialog.selected_profile
+        if profile.id == self.ctx.profile.id:
+            return
+        was_connected = self._connected
+        try:
+            self.ctx.apply_profile(profile)
+        except Exception as exc:
+            QMessageBox.critical(self, "切换失败", str(exc))
+            return
+        self.device_card.set_profile(self.ctx.profile)
+        self.home.refresh(profile_changed=True)
+        if was_connected:
+            self.machine.disconnect_machine()
+            QTimer.singleShot(300, self._open_connect_dialog)
 
     # ---------------- actions ----------------
 
@@ -522,7 +544,7 @@ class MainWindow(QMainWindow):
             self.ctx.log("ERROR", "RUN", f"生产记录保存失败：{exc}")
             self.show_toast(f"生产记录保存失败：{exc}", "error")
             return
-        self.dashboard.refresh()
+        self.home.refresh()
         self.production.refresh()
         self.feeders.refresh()
         if record.status == "Completed":

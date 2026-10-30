@@ -277,6 +277,8 @@ class FeederBankConfig:
     tape_pitch_mm: float = 4.0
     origin: Point3 = field(default_factory=lambda: Point3(18.0, 330.0, 0.0))
     direction: str = "x"  # x / y
+    top_count: int = 0  # 上排电动飞达数量（0 = 不分区）
+    bottom_count: int = 0  # 下排电动飞达数量
 
     def slot_position(self, slot: int) -> tuple[float, float]:
         index = max(0, int(slot) - self.first_slot)
@@ -284,6 +286,24 @@ class FeederBankConfig:
         if self.direction == "y":
             return (self.origin.x, self.origin.y - offset)
         return (self.origin.x + offset, self.origin.y)
+
+    def bank_of(self, slot: int) -> str:
+        """返回槽位所在料区：top / bottom / both。"""
+        index = max(0, int(slot) - self.first_slot)
+        if self.top_count > 0 and index < self.top_count:
+            return "top"
+        if self.bottom_count > 0 and index >= self.top_count:
+            return "bottom"
+        return "both"
+
+    def bank_slots(self, bank: str) -> tuple[int, int]:
+        """返回某料区的槽位区间 [start, end)。"""
+        if bank == "top":
+            return (self.first_slot, self.first_slot + max(0, self.top_count))
+        if bank == "bottom":
+            start = self.first_slot + max(0, self.top_count)
+            return (start, start + max(0, self.bottom_count))
+        return (self.first_slot, self.first_slot + max(0, self.slot_count))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -294,6 +314,8 @@ class FeederBankConfig:
             "tape_pitch_mm": self.tape_pitch_mm,
             "origin": self.origin.to_dict(),
             "direction": self.direction,
+            "top_count": self.top_count,
+            "bottom_count": self.bottom_count,
         }
 
     @classmethod
@@ -306,6 +328,8 @@ class FeederBankConfig:
             tape_pitch_mm=float(data.get("tape_pitch_mm", 4.0)),
             origin=Point3.from_dict(data.get("origin", {"x": 18.0, "y": 330.0})),
             direction=str(data.get("direction", "x")),
+            top_count=int(data.get("top_count", 0)),
+            bottom_count=int(data.get("bottom_count", 0)),
         )
 
 
@@ -472,6 +496,7 @@ class MachineProfile:
     name: str
     description: str = ""
     vendor: str = ""
+    image: str = ""  # assets 下的设备图片，例如 machines/m1.png
     schema: str = SCHEMA_ID
     axes: dict[str, AxisConfig] = field(default_factory=dict)
     heads: list[HeadConfig] = field(default_factory=list)
@@ -688,6 +713,7 @@ class MachineProfile:
             "name": self.name,
             "description": self.description,
             "vendor": self.vendor,
+            "image": self.image,
             "tags": list(self.tags),
             "axes": {axis_id: axis.to_dict() for axis_id, axis in self.axes.items()},
             "heads": [head.to_dict() for head in self.heads],
@@ -719,6 +745,7 @@ class MachineProfile:
             name=str(data.get("name", "")),
             description=str(data.get("description", "")),
             vendor=str(data.get("vendor", "")),
+            image=str(data.get("image", "")),
             schema=str(data.get("schema", SCHEMA_ID)),
             axes=axes,
             heads=heads,

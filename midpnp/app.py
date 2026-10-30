@@ -26,7 +26,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MidPnP Studio 贴片机上位机")
     parser.add_argument("--data-dir", type=str, default="", help="覆盖应用数据目录")
     parser.add_argument("--smoke-test", action="store_true", help="启动后自动退出，用于打包自检")
-    parser.add_argument("--page", type=str, default="dashboard", help="启动页")
+    parser.add_argument("--page", type=str, default="home", help="启动页")
     return parser.parse_args(argv)
 
 

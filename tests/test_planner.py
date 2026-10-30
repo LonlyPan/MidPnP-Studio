@@ -90,7 +90,7 @@ class PlannerTests(unittest.TestCase):
             nozzle = nozzle_for_component(
                 component, profile, {package.id: package for package in packages.list()}
             )
-            self.assertEqual(nozzle, "N3")
+            self.assertEqual(nozzle, "N2")
 
     def test_limits_min_bound_is_honoured(self) -> None:
         limits = MachineLimits(travel_x_mm=420, travel_y_mm=360, min_x_mm=100, min_y_mm=100)

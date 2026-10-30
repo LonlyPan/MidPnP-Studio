@@ -1,10 +1,11 @@
 {
   "schema": "midpnp.machine-profile/1",
   "id": "sim-desktop",
-  "name": "内置模拟机 · 单头 4 吸嘴",
-  "description": "与演示数据配套的虚拟贴片机：420×360 mm 行程、单头四吸嘴、32 个料站、俯视 + 底部对中双相机。不连接任何硬件，用于流程演示与视觉算法自检。",
+  "name": "MidPnP M1 · 双吸嘴（模拟）",
+  "description": "按 MidPnP M1 实物建模的虚拟贴片机：420×360 mm 行程、双吸嘴、上下各 25 个电动飞达、俯视 + 底部对中双相机。不连接任何硬件，用于流程演示与视觉算法自检。",
   "vendor": "MidPnP Studio",
-  "tags": ["simulator", "demo", "default"],
+  "image": "machines/m1.png",
+  "tags": ["simulator", "demo", "default", "m1"],
   "axes": {
     "x": {"name": "X 轴", "unit": "mm", "min": 0, "max": 420, "home": "min", "max_speed": 320, "accel": 2500, "steps_per_mm": 80, "soft_limit": true},
     "y": {"name": "Y 轴", "unit": "mm", "min": 0, "max": 360, "home": "min", "max_speed": 320, "accel": 2500, "steps_per_mm": 80, "soft_limit": true},
@@ -20,10 +21,8 @@
       "axis_z": "z",
       "nozzle_change": "manual",
       "nozzles": [
-        {"id": "N1", "name": "N1 · 0.4 mm", "tip_diameter_mm": 0.4, "offset": {"x": 0, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "small", "led"]},
-        {"id": "N2", "name": "N2 · 0.7 mm", "tip_diameter_mm": 0.7, "offset": {"x": 8, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "crystal", "transistor"]},
-        {"id": "N3", "name": "N3 · 1.0 mm", "tip_diameter_mm": 1.0, "offset": {"x": 16, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "qfn", "qfp", "transistor"]},
-        {"id": "N4", "name": "N4 · 1.6 mm", "tip_diameter_mm": 1.6, "offset": {"x": 24, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "connector", "tht", "power"]}
+        {"id": "N1", "name": "N1 · 0.5 mm", "tip_diameter_mm": 0.5, "offset": {"x": 0, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-chip", "compatible_tags": ["chip", "small", "led", "crystal"]},
+        {"id": "N2", "name": "N2 · 1.2 mm", "tip_diameter_mm": 1.2, "offset": {"x": 9, "y": 0, "z": 0}, "rotation_axis": "c", "vision_pipeline": "bottom-ic", "compatible_tags": ["ic", "qfn", "qfp", "transistor", "connector", "power", "tht"]}
       ]
     }
   ],
@@ -55,12 +54,14 @@
   ],
   "feeders": {
     "type": "slot",
-    "slot_count": 32,
+    "slot_count": 50,
     "first_slot": 1,
-    "slot_pitch_mm": 12.0,
+    "slot_pitch_mm": 10.0,
     "tape_pitch_mm": 4.0,
     "origin": {"x": 18.0, "y": 330.0, "z": 0.0},
-    "direction": "x"
+    "direction": "x",
+    "top_count": 25,
+    "bottom_count": 25
   },
   "driver": {
     "type": "simulator",

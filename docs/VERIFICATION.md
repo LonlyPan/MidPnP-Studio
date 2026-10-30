@@ -1,6 +1,27 @@
 # 验证记录
 
-## 0. v0.2（2026-10-24）
+## 0. v0.3（2026-10-30）
+
+环境：Windows 10 22H2 (19045) · Python 3.13.13 · PySide6 6.12.0 · numpy 2.5.4
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 语法编译 | `python -m compileall -q midpnp tests tools main.py` | 通过（0 错误） |
+| 单元测试 | `python -m unittest discover -s tests` | **107 项全部通过** |
+| 首页 | `tests/test_home.py`（7 项） | 上下料分区、飞达料号、双相机切换、线稿绘制、未连接横幅 |
+| 连接向导 | `tests/test_connect_dialog.py`（2 项） | 四步全部完成并自动关闭；取消可中止 |
+| 界面离屏渲染 | `python tools\make_screenshots.py` | 10 个页面 + 连接弹窗 + 设备画廊 |
+| 连接实机流程 | 无头脚本 | 相机 2 台 → 主机已连接 → 已回零 → 校准完成，约 2.7 s |
+| 设备照片 | `assets/machines/m1.png` | 去白底 PNG，侧边栏/画廊/连接弹窗共用 |
+
+本版新增：首页（相机 + Jog + 整机线稿）、四步连接弹窗、侧边栏设备照片与点击切换、
+设备画廊/设置页照片、M1 双吸嘴机型（上下各 25 飞达）。
+本期**未**重新执行 PyInstaller 打包；打包脚本已加入 `--add-data assets`，下次
+`build.ps1` 时验证。
+
+---
+
+## 0.1 v0.2（2026-10-24）
 
 环境：Windows 10 22H2 (19045) · Python 3.13.13 · PySide6 6.12.0 · numpy 2.5.4 · pyserial 3.5
 
