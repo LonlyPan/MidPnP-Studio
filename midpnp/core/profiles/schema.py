@@ -497,6 +497,7 @@ class MachineProfile:
     description: str = ""
     vendor: str = ""
     image: str = ""  # assets 下的设备图片，例如 machines/m1.png
+    bed_image: str = ""  # 可选底板图；绝对路径或 assets 相对路径
     schema: str = SCHEMA_ID
     axes: dict[str, AxisConfig] = field(default_factory=dict)
     heads: list[HeadConfig] = field(default_factory=list)
@@ -714,6 +715,7 @@ class MachineProfile:
             "description": self.description,
             "vendor": self.vendor,
             "image": self.image,
+            "bed_image": self.bed_image,
             "tags": list(self.tags),
             "axes": {axis_id: axis.to_dict() for axis_id, axis in self.axes.items()},
             "heads": [head.to_dict() for head in self.heads],
@@ -746,6 +748,7 @@ class MachineProfile:
             description=str(data.get("description", "")),
             vendor=str(data.get("vendor", "")),
             image=str(data.get("image", "")),
+            bed_image=str(data.get("bed_image", "")),
             schema=str(data.get("schema", SCHEMA_ID)),
             axes=axes,
             heads=heads,

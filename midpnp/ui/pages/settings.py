@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
+from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -315,9 +317,22 @@ class SettingsPage(QWidget):
         row.addWidget(self.open_profile_button)
         row.addStretch(1)
         card.body.addLayout(row)
+
+        bed_row = QHBoxLayout()
+        bed_row.setSpacing(8)
+        self.bed_image_button = button("更换底板图", "folder", "subtle")
+        self.bed_image_button.setToolTip("选择一张图片替换整机总览里的底板，类似热床贴图")
+        self.bed_reset_button = button("默认底板", "refresh", "subtle")
+        self.bed_reset_button.setToolTip("恢复内置的固定孔 / 校准板 / 相机底板")
+        bed_row.addWidget(self.bed_image_button)
+        bed_row.addWidget(self.bed_reset_button)
+        bed_row.addStretch(1)
+        card.body.addLayout(bed_row)
         self.change_profile_button.clicked.connect(self._open_gallery)
         self.dup_profile_button.clicked.connect(self._duplicate_profile)
         self.open_profile_button.clicked.connect(self._open_profile_dir)
+        self.bed_image_button.clicked.connect(self._choose_bed_image)
+        self.bed_reset_button.clicked.connect(self._reset_bed_image)
         return card
 
     def _refresh_profile_view(self) -> None:
@@ -371,6 +386,46 @@ class SettingsPage(QWidget):
                 lambda: self.ctx.machine.connect_machine(self.ctx.settings, self.ctx.feeders(), self.ctx.profile),
             )
             self.ctx.toast("正在按新机型重新连接…", "info")
+
+    def _choose_bed_image(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择底板图片",
+            "",
+            "图片 (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
+        if not path:
+            return
+        source = Path(path)
+        profile = self.ctx.profile
+        directory = self.ctx.paths.root / "bed_images"
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / f"{profile.id}{source.suffix.lower() or '.png'}"
+            shutil.copyfile(source, target)
+        except OSError as exc:
+            QMessageBox.critical(self, "底板图保存失败", str(exc))
+            return
+        profile.bed_image = str(target)
+        self._save_bed_profile(profile, "已更换底板图")
+
+    def _reset_bed_image(self) -> None:
+        profile = self.ctx.profile
+        if not profile.bed_image:
+            return
+        profile.bed_image = ""
+        self._save_bed_profile(profile, "已恢复默认底板")
+
+    def _save_bed_profile(self, profile: MachineProfile, message: str) -> None:
+        try:
+            self.ctx.profile_library.save(profile, overwrite_builtin=True)
+            self.ctx.profile_library.refresh()
+            self.ctx.apply_profile(profile)
+        except (ProfileError, OSError) as exc:
+            QMessageBox.critical(self, "保存机型失败", str(exc))
+            return
+        self._refresh_profile_view()
+        self.ctx.toast(message, "success")
 
     def _duplicate_profile(self) -> None:
         source = self.ctx.profile

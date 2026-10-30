@@ -9,10 +9,11 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ...core.models import MachineState
 from ...core.vision import Point2, SimulatedCamera
+from ..assets import assets_root
 from ..context import AppContext
 from ..status import state_color, state_label
 from ..theme import COLORS
@@ -193,6 +195,9 @@ class MachineScene(QWidget):
         self.setMinimumSize(560, 500)
         self.setMouseTracking(True)
         self._profile = ctx.profile
+        self._inner_rect = QRectF()
+        self._travel = (1.0, 1.0)
+        self._bed_image_cache: tuple[str, QImage | None] = ("", None)
         self._feeders: dict[int, Any] = {}
         self._components: dict[str, Any] = {}
         self._product: Any = None
@@ -213,6 +218,7 @@ class MachineScene(QWidget):
         self._product = self.ctx.current_product
         self._state = self.ctx.machine.state
         self._connected = self.ctx.connected
+        self._bed_image_cache = ("", None)
         self.update()
 
     def set_head(self, x: float, y: float, z: float = 0.0) -> None:
@@ -275,7 +281,10 @@ class MachineScene(QWidget):
 
         limits = profile.limits()
         travel_x = max(1.0, limits.travel_x_mm)
+        travel_y = max(1.0, limits.travel_y_mm)
         inner = frame.adjusted(14, 14, -14, -14)
+        self._inner_rect = inner
+        self._travel = (travel_x, travel_y)
         self._lane_rects = {}
         self._draw_bank(
             painter,
@@ -335,7 +344,6 @@ class MachineScene(QWidget):
                 area.height() - 12,
             )
             if cell == 0 or cell == cells - 1:
-                self._draw_lane(painter, lane, 0, None, None)
                 continue
             index = cell - 1
             slot = first_slot + (count - 1 - index if reverse else index)
@@ -421,28 +429,38 @@ class MachineScene(QWidget):
     # ---------------- 底板 ----------------
 
     def _draw_bed(self, painter: QPainter, bed: QRectF) -> None:
-        painter.setPen(QPen(QColor("#2b4652"), 1.2))
-        painter.setBrush(QColor("#0a1216"))
-        painter.drawRoundedRect(bed, 6, 6)
-
-        # 平台固定孔：一排排沉孔
-        step = max(18, int(bed.width() / 26))
-        y = bed.top() + 14
-        while y < bed.bottom() - 8:
-            x = bed.left() + 14
-            while x < bed.right() - 8:
-                painter.setPen(QPen(QColor("#31505c"), 1))
-                painter.setBrush(QColor("#05090b"))
-                painter.drawEllipse(QPointF(x, y), 2.2, 2.2)
-                x += step
-            y += step
-
         profile = self._profile
         limits = profile.limits() if profile else None
         if limits is None:
             return
         travel_x = max(1.0, limits.travel_x_mm)
         travel_y = max(1.0, limits.travel_y_mm)
+
+        painter.save()
+        painter.setClipRect(bed)
+        painter.setPen(QPen(QColor("#2b4652"), 1.2))
+        painter.setBrush(QColor("#0a1216"))
+        painter.drawRoundedRect(bed, 8, 8)
+        image = self._bed_image()
+        if image is not None:
+            scaled = image.scaled(
+                bed.size().toSize(),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            src = QRectF(
+                (scaled.width() - bed.width()) / 2,
+                (scaled.height() - bed.height()) / 2,
+                bed.width(),
+                bed.height(),
+            )
+            painter.drawImage(bed, scaled, src)
+        else:
+            self._draw_default_bed(painter, bed)
+        painter.restore()
+        painter.setPen(QPen(QColor("#2b4652"), 1.2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(bed, 8, 8)
 
         def to_bed(mx: float, my: float) -> QPointF:
             return QPointF(
@@ -480,14 +498,6 @@ class MachineScene(QWidget):
                 )
                 painter.drawEllipse(point, 3.2, 3.2)
 
-        hole = QPointF(bed.center().x(), bed.bottom() - bed.height() * 0.18)
-        painter.setPen(QPen(QColor("#3a5663"), 1.2))
-        painter.setBrush(QColor("#05090b"))
-        painter.drawEllipse(hole, 18, 18)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(hole, 11, 11)
-        painter.drawEllipse(hole, 4.5, 4.5)
-
         painter.setPen(QPen(QColor(COLORS["faint"]), 1))
         painter.setFont(QFont("Cascadia Mono", 7))
         painter.drawText(QPointF(bed.left() + 8, bed.top() + 14), f"X 0–{travel_x:.0f} mm")
@@ -496,6 +506,118 @@ class MachineScene(QWidget):
         painter.rotate(-90)
         painter.drawText(QPointF(0, 0), f"Y 0–{travel_y:.0f} mm")
         painter.restore()
+
+    def _bed_image(self) -> QImage | None:
+        raw = str(getattr(self._profile, "bed_image", "") or "")
+        if not raw:
+            return None
+        if self._bed_image_cache[0] == raw:
+            return self._bed_image_cache[1]
+        path = Path(raw)
+        if not path.is_absolute():
+            path = assets_root() / raw
+        image = QImage(str(path))
+        if image.isNull():
+            image = None
+        self._bed_image_cache = (raw, image)
+        return image
+
+    def _draw_default_bed(self, painter: QPainter, bed: QRectF) -> None:
+        # 平台外框与角部安装孔
+        painter.setPen(QPen(QColor("#4a6674"), 1.2))
+        painter.setBrush(QColor("#0a1216"))
+        painter.drawRoundedRect(bed.adjusted(6, 6, -6, -6), 10, 10)
+        for corner in (
+            QPointF(bed.left() + 20, bed.top() + 20),
+            QPointF(bed.right() - 20, bed.top() + 20),
+            QPointF(bed.left() + 20, bed.bottom() - 20),
+            QPointF(bed.right() - 20, bed.bottom() - 20),
+        ):
+            painter.setPen(QPen(QColor("#5c7682"), 1.1))
+            painter.setBrush(QColor("#05090b"))
+            painter.drawEllipse(corner, 5.2, 5.2)
+
+        # 成排固定孔
+        step = max(22, int(bed.width() / 24))
+        y = bed.top() + 18
+        row = 0
+        while y < bed.bottom() - 10:
+            x = bed.left() + 18 + (step / 2 if row % 2 else 0)
+            while x < bed.right() - 10:
+                painter.setPen(QPen(QColor("#31505c"), 1))
+                painter.setBrush(QColor("#05090b"))
+                painter.drawEllipse(QPointF(x, y), 2.2, 2.2)
+                x += step
+            y += step
+            row += 1
+
+        # 平台中缝（中央带斜切）
+        divider = bed.top() + bed.height() * 0.52
+        cx = bed.center().x()
+        painter.setPen(QPen(QColor("#3c5663"), 1.1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(bed.left() + 10, divider), QPointF(cx - 72, divider))
+        painter.drawLine(QPointF(cx - 72, divider), QPointF(cx - 62, divider - 8))
+        painter.drawLine(QPointF(cx - 62, divider - 8), QPointF(cx + 62, divider - 8))
+        painter.drawLine(QPointF(cx + 62, divider - 8), QPointF(cx + 72, divider))
+        painter.drawLine(QPointF(cx + 72, divider), QPointF(bed.right() - 10, divider))
+
+        lower_top = divider
+        lower_h = max(1.0, bed.bottom() - lower_top)
+
+        # 校准板（八角形 PCB + 棋盘标定图案）
+        cal_w = min(140.0, bed.width() * 0.21)
+        cal_h = max(52.0, cal_w * 0.52)
+        cal = QPointF(cx, lower_top + lower_h * 0.53)
+        cut = min(12.0, cal_w * 0.12)
+        poly = QPolygonF(
+            [
+                QPointF(cal.x() - cal_w / 2 + cut, cal.y() - cal_h / 2),
+                QPointF(cal.x() + cal_w / 2 - cut, cal.y() - cal_h / 2),
+                QPointF(cal.x() + cal_w / 2, cal.y() - cal_h / 2 + cut),
+                QPointF(cal.x() + cal_w / 2, cal.y() + cal_h / 2 - cut),
+                QPointF(cal.x() + cal_w / 2 - cut, cal.y() + cal_h / 2),
+                QPointF(cal.x() - cal_w / 2 + cut, cal.y() + cal_h / 2),
+                QPointF(cal.x() - cal_w / 2, cal.y() + cal_h / 2 - cut),
+                QPointF(cal.x() - cal_w / 2, cal.y() - cal_h / 2 + cut),
+            ]
+        )
+        painter.setPen(QPen(QColor("#87979e"), 1.1))
+        painter.setBrush(QColor("#c8d0d3"))
+        painter.drawPolygon(poly)
+        painter.setPen(QPen(QColor("#4c5b62"), 0.9))
+        painter.setBrush(QColor("#7f8b90"))
+        inner = QRectF(cal.x() - cal_w * 0.20, cal.y() - cal_h * 0.24, cal_w * 0.40, cal_h * 0.48)
+        painter.drawRect(inner)
+        cell = max(2.0, inner.width() / 8)
+        for row in range(4):
+            for col in range(4):
+                if (row + col) % 2:
+                    continue
+                painter.setBrush(QColor("#2c383d"))
+                painter.drawRect(
+                    QRectF(inner.left() + col * cell, inner.top() + row * cell, cell, cell)
+                )
+        painter.setPen(QPen(QColor("#4c5b62"), 1.0))
+        painter.setBrush(QColor("#05090b"))
+        for dx in (-cal_w * 0.38, cal_w * 0.38):
+            painter.drawEllipse(QPointF(cal.x() + dx, cal.y()), 3.2, 3.2)
+
+        # 底部相机
+        cam = QPointF(cx, lower_top + lower_h * 0.85)
+        painter.setPen(QPen(QColor("#58727e"), 1.2))
+        painter.setBrush(QColor("#070d11"))
+        painter.drawEllipse(cam, 28, 28)
+        painter.setPen(QPen(QColor("#3c5663"), 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(cam, 21, 21)
+        painter.drawEllipse(cam, 14, 14)
+        painter.setBrush(QColor("#020506"))
+        painter.setPen(QPen(QColor("#75909b"), 1.1))
+        painter.drawEllipse(cam, 8, 8)
+        painter.setBrush(QColor("#2b4652"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(cam.x() - 3, cam.y() - 3), 2.4, 2.4)
 
     def _draw_head(self, painter: QPainter, frame: QRectF) -> None:
         profile = self._profile
@@ -556,10 +678,17 @@ class MachineScene(QWidget):
         if not feeder.enabled:
             self.ctx.toast(f"{slot:02d} 号供料器已停用", "warning")
             return
-        x = float(feeder.pick_x_mm)
-        y = float(feeder.pick_y_mm)
-        if abs(x) < 1e-6 and abs(y) < 1e-6:
-            x, y = self._profile.feeders.slot_position(slot)
+        lane = self._lane_rects.get(slot)
+        inner = self._inner_rect
+        if lane is not None and not inner.isEmpty():
+            travel_x, travel_y = self._travel
+            x = (lane.center().x() - inner.left()) / inner.width() * travel_x
+            y = (inner.bottom() - lane.center().y()) / inner.height() * travel_y
+        else:
+            x = float(feeder.pick_x_mm)
+            y = float(feeder.pick_y_mm)
+            if abs(x) < 1e-6 and abs(y) < 1e-6:
+                x, y = self._profile.feeders.slot_position(slot)
         z = float(self.ctx.settings.safe_z_mm)
         self.ctx.machine.move_to(x, y, z)
         self.ctx.log("INFO", "MACHINE", f"移动到 {slot:02d} 号飞达取料点 ({x:.1f}, {y:.1f})")

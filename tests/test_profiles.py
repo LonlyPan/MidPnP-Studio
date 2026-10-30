@@ -90,9 +90,11 @@ class ProfileTests(unittest.TestCase):
 
     def test_round_trip_json(self) -> None:
         profile = self.library.get("dual-head-demo")
+        profile.bed_image = "bed/custom.png"
         data = json.loads(json.dumps(profile.to_dict()))
         clone = MachineProfile.from_dict(data)
         self.assertEqual(clone.id, profile.id)
+        self.assertEqual(clone.bed_image, "bed/custom.png")
         self.assertEqual(len(clone.heads), 2)
         self.assertEqual(len(clone.nozzle_ids()), 4)
         self.assertEqual(clone.to_dict()["axes"]["x"]["max"], 450.0)
