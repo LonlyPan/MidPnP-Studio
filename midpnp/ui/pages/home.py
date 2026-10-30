@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -30,7 +30,6 @@ from ..status import state_color, state_label
 from ..theme import COLORS
 from ..widgets import (
     Card,
-    PageHeader,
     button,
     make_chip,
 )
@@ -61,7 +60,7 @@ class VerticalScale(QWidget):
         self._continuous = continuous
         self._index = max(0, min(index, len(self._labels) - 1))
         self._value = self._values[self._index] if self._values else 0.0
-        self.setFixedWidth(112)
+        self.setFixedWidth(100)
         self.setMinimumHeight(150)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -259,15 +258,14 @@ class MachineScene(QWidget):
         first_slot = bank.first_slot
 
         margin_x = 30.0
-        top_y = 48.0
-        bed_h = min(240.0, max(120.0, height * 0.26))
-        lane_h = max(110.0, (height - top_y - 30.0 - 36.0 - bed_h) / 2.0)
+        lane_h = min(170.0, max(120.0, height * 0.23))
+        top_y = 46.0
         bottom_y = height - 30.0 - lane_h
         bed = QRectF(
             margin_x,
-            top_y + lane_h + 18.0,
+            top_y + lane_h + 20.0,
             width - margin_x * 2,
-            max(80.0, bottom_y - 18.0 - (top_y + lane_h + 18.0)),
+            max(80.0, bottom_y - (top_y + lane_h) - 40.0),
         )
         frame = QRectF(margin_x - 10, top_y - 16, width - margin_x * 2 + 20, bottom_y + lane_h + 20 - (top_y - 16))
         painter.setPen(QPen(QColor("#2b4652"), 1.4))
@@ -343,27 +341,10 @@ class MachineScene(QWidget):
             lane = QRectF(center_x - lane_w / 2, area.top() + 6, lane_w, area.height() - 12)
             lanes.append((slot, lane))
 
-        # 上下两排都按同一套槽位坐标画底板，保证左右对齐
-        base_left = (
-            inner.left()
-            + max(0.0, min(1.0, bank.origin.x / travel_x)) * inner.width()
-            - lane_w / 2
-            - 5
-        )
-        last_mm = bank.origin.x + (count - 1) * bank.slot_pitch_mm
-        base_right = (
-            inner.left()
-            + max(0.0, min(1.0, last_mm / travel_x)) * inner.width()
-            + lane_w / 2
-            + 5
-        )
-        base = QRectF(base_left, area.top(), max(10.0, base_right - base_left), area.height())
-        painter.setPen(QPen(QColor(self.DIM), 1))
-        painter.setBrush(QColor("#0b1419"))
-        painter.drawRoundedRect(base, 5, 5)
+        title_x = inner.left() + max(0.0, min(1.0, bank.origin.x / travel_x)) * inner.width() - lane_w / 2
         painter.setPen(QColor(COLORS["faint"]))
         painter.setFont(QFont("Microsoft YaHei UI", 8))
-        painter.drawText(QPointF(base.left() + 4, area.top() - 7), title)
+        painter.drawText(QPointF(title_x, area.top() - 7), title)
 
         for slot, lane in lanes:
             self._lane_rects[slot] = lane
@@ -405,45 +386,31 @@ class MachineScene(QWidget):
         painter.setBrush(fill)
         painter.drawRoundedRect(lane, 2.5, 2.5)
 
-        # 顶部料带规格，底部槽位号
+        # 只显示飞达规格（数字大、mm 单独一行）和槽位序号
         if feeder is not None:
             painter.setPen(text_color)
-            num_font = QFont("Cascadia Mono", 6)
-            mm_font = QFont("Cascadia Mono", 4)
             num_text = f"{feeder.tape_width_mm:g}"
-            num_width = QFontMetrics(num_font).horizontalAdvance(num_text)
-            mm_width = QFontMetrics(mm_font).horizontalAdvance("mm")
-            start_x = lane.center().x() - (num_width + mm_width) / 2
-            painter.setFont(num_font)
-            painter.drawText(QPointF(start_x, lane.top() + 9), num_text)
-            painter.setFont(mm_font)
-            painter.drawText(QPointF(start_x + num_width, lane.top() + 9), "mm")
-        painter.setPen(QColor(COLORS["faint"]))
-        painter.setFont(QFont("Cascadia Mono", 5))
-        painter.drawText(
-            QRectF(lane.left() + 1, lane.bottom() - 9, lane.width() - 2, 8),
-            Qt.AlignmentFlag.AlignCenter,
-            f"{slot:02d}",
-        )
+            num_size = 16 if len(num_text) == 1 else 10
+            painter.setFont(QFont("Cascadia Mono", num_size, QFont.Weight.Bold))
+            painter.drawText(
+                QRectF(lane.left(), lane.top() + 6, lane.width(), 24),
+                Qt.AlignmentFlag.AlignCenter,
+                num_text,
+            )
+            painter.setFont(QFont("Cascadia Mono", 8))
+            painter.drawText(
+                QRectF(lane.left(), lane.top() + 30, lane.width(), 12),
+                Qt.AlignmentFlag.AlignCenter,
+                "mm",
+            )
 
-        if feeder is None:
-            return
-        value, package = self._feeder_texts(feeder, component)
-        label = value
-        font = QFont("Cascadia Mono", 7)
-        metrics = QFontMetrics(font)
-        height = int(lane.height() - 32)
-        if package and package.upper() not in value.upper():
-            combined = f"{value}-{package}" if value else package
-            label = combined if metrics.horizontalAdvance(combined) <= height else (value or package)
-        painter.setFont(font)
-        painter.setPen(text_color)
-        if label:
-            painter.save()
-            painter.translate(lane.center().x(), lane.bottom() - 10)
-            painter.rotate(-90)
-            painter.drawText(QPointF(0, 0), metrics.elidedText(label, Qt.TextElideMode.ElideRight, height))
-            painter.restore()
+        painter.setPen(QColor(COLORS["muted"]))
+        painter.setFont(QFont("Cascadia Mono", 12 if slot < 10 else 10, QFont.Weight.Bold))
+        painter.drawText(
+            QRectF(lane.left() + 1, lane.bottom() - 17, lane.width() - 2, 15),
+            Qt.AlignmentFlag.AlignCenter,
+            f"{slot}",
+        )
 
     @staticmethod
     def _feeder_texts(feeder: Any, component: Any) -> tuple[str, str]:
@@ -635,13 +602,6 @@ class HomePage(QWidget):
         outer.setContentsMargins(20, 18, 20, 18)
         outer.setSpacing(12)
 
-        self.header = PageHeader("首页", "相机画面、点动控制与整机状态")
-        self.state_chip = make_chip("离线")
-        self.connect_button = button("连接设备", "link", "primary")
-        self.header.add_action(self.state_chip)
-        self.header.add_action(self.connect_button)
-        outer.addWidget(self.header)
-
         self.banner = QFrame()
         self.banner.setStyleSheet(
             f"background: {COLORS['warn']}12; border: 1px solid {COLORS['warn']}44; border-radius: 8px;"
@@ -692,15 +652,12 @@ class HomePage(QWidget):
         camera_top.addWidget(self.camera_chip)
         camera_card.body.addLayout(camera_top)
         self.camera_view = CameraView()
-        self.camera_view.setMinimumHeight(220)
-        camera_card.body.addWidget(self.camera_view, 1)
-        self.camera_hint = QLabel("")
-        self.camera_hint.setProperty("role", "hint")
-        self.camera_hint.setWordWrap(True)
-        camera_card.body.addWidget(self.camera_hint)
-        left.addWidget(camera_card, 2)
+        self.camera_view.setMinimumSize(320, 180)
+        self.camera_view.setFixedHeight(240)
+        camera_card.body.addWidget(self.camera_view)
+        left.addWidget(camera_card, 0)
         left.addWidget(self._build_jog_card(), 1)
-        content.addLayout(left, 2)
+        content.addLayout(left, 3)
 
         scene_card = Card(padding=12)
         scene_top = QHBoxLayout()
@@ -728,10 +685,9 @@ class HomePage(QWidget):
         tip.setProperty("role", "faint")
         legend.addWidget(tip)
         scene_card.body.addLayout(legend)
-        content.addWidget(scene_card, 3)
+        content.addWidget(scene_card, 7)
         outer.addLayout(content, 1)
 
-        self.connect_button.clicked.connect(self._open_connect)
         self.banner_button.clicked.connect(self._open_connect)
         self.camera_top_button.clicked.connect(lambda: self._set_camera("top"))
         self.camera_bottom_button.clicked.connect(lambda: self._set_camera("bottom"))
@@ -788,7 +744,7 @@ class HomePage(QWidget):
         ):
             control = button(label, icon_name, "subtle")
             control.setProperty("jog", "true")
-            control.setMinimumSize(48, 34)
+            control.setMinimumSize(44, 34)
             if icon_name:
                 control.setIconSize(QSize(18, 18))
             else:
@@ -812,7 +768,7 @@ class HomePage(QWidget):
         z_home.setStyleSheet("font-size: 10px; font-weight: 600;")
         z_home.setToolTip("Z 轴单独归位")
         for row, control in enumerate((z_up, z_home, z_down)):
-            control.setMinimumSize(48, 34)
+            control.setMinimumSize(44, 34)
             if row == 1:
                 control.setIconSize(QSize(0, 0))
             grid.addWidget(control, row, 3)
@@ -924,7 +880,6 @@ class HomePage(QWidget):
 
     def _apply_connection_state(self, connected: bool) -> None:
         self.banner.setVisible(not connected)
-        self.connect_button.setText("重新连接" if connected else "连接设备")
         for control in self._jog_buttons:
             control.setEnabled(connected)
         self.vacuum_button.setVisible(self._target != "camera")
@@ -940,7 +895,6 @@ class HomePage(QWidget):
     def _on_connection(self, connected: bool, label: str) -> None:
         self.scene.set_connection(connected)
         self._apply_connection_state(connected)
-        self.camera_hint.setText(label or ("已连接" if connected else "未连接"))
         if connected:
             self.ctx.toast("设备已连接", "success")
 
@@ -951,12 +905,12 @@ class HomePage(QWidget):
             state = MachineState.OFFLINE
         color = state_color(state)
         label = state_label(state)
-        for chip in (self.state_chip, self.scene_state):
-            chip.setText(label)
-            chip.setStyleSheet(
-                f"background: {color}16; border: 1px solid {color}55; color: {color};"
-                "border-radius: 10px; padding: 3px 9px; font-size: 11px;"
-            )
+        chip = self.scene_state
+        chip.setText(label)
+        chip.setStyleSheet(
+            f"background: {color}16; border: 1px solid {color}55; color: {color};"
+            "border-radius: 10px; padding: 3px 9px; font-size: 11px;"
+        )
 
     def _on_position(self, x: float, y: float, z: float) -> None:
         self.scene.set_head(x, y, z)
@@ -1050,9 +1004,6 @@ class HomePage(QWidget):
         self.camera_chip.setText(config.id)
         self.camera_view.set_frame(frame, detections)
         self.camera_view.set_hud(hud, state_text)
-        self.camera_hint.setText(
-            ("相机已连接 · " if self.ctx.connected else "设备未连接 · 仿真预览 · ") + config.id
-        )
 
     # ---------------- 操作 ----------------
 
