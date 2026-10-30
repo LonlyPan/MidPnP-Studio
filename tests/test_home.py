@@ -89,6 +89,13 @@ class HomePageTests(unittest.TestCase):
         self.page._set_target("right")
         self.assertEqual(self.page._active_nozzle(), self.page._nozzle_ids[1])
 
+    def test_top_and_bottom_banks_are_aligned(self) -> None:
+        self.page.scene.grab()
+        top = self.page.scene._lane_rects[1]
+        bottom = self.page.scene._lane_rects[26]
+        self.assertAlmostEqual(top.left(), bottom.left(), delta=0.6)
+        self.assertAlmostEqual(top.width(), bottom.width(), delta=0.6)
+
     def test_camera_modes_switch(self) -> None:
         self.page._set_camera("top")
         self.assertIsNotNone(self.page._camera_config("top"))

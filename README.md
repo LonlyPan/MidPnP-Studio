@@ -186,7 +186,7 @@ MidPnP Studio/
 │  │  ├─ theme.py           # 深色工业主题
 │  │  └─ main_window.py     # 导航、状态栏、急停、页面容器
 │  └─ app.py                # 启动、异常处理、数据初始化
-├─ tests/                   # 112 个单元测试
+├─ tests/                   # 113 个单元测试
 ├─ tools/                   # 截图、图标、TCP 模拟器、端到端冒烟
 ├─ docs/                    # 架构、协议、机型、视觉、导入、操作手册
 ├─ run.ps1 / run.bat        # 源码启动
@@ -198,7 +198,7 @@ MidPnP Studio/
 ## 验证
 
 ```powershell
-# 单元测试（112 项）
+# 单元测试（113 项）
 python -m unittest discover -s tests -v
 
 # 端到端：连接模拟器 → 完整生产 35 点 → 落库 → 校验余料
@@ -208,7 +208,7 @@ python tools\smoke_production.py
 python tools\make_screenshots.py
 ```
 
-本项目已通过：112 个单元测试、35 点完整模拟生产、TCP 适配器联调、
+本项目已通过：113 个单元测试、35 点完整模拟生产、TCP 适配器联调、
 G-code 命令表渲染、仿真基准点对位（0.6°/0.4 mm 可复原）、PyInstaller 启动自检。
 
 ## 重要边界与安全声明

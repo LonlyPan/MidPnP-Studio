@@ -62,7 +62,7 @@ class VerticalScale(QWidget):
         self._index = max(0, min(index, len(self._labels) - 1))
         self._value = self._values[self._index] if self._values else 0.0
         self.setFixedWidth(112)
-        self.setMinimumHeight(190)
+        self.setMinimumHeight(150)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     # ---------------- 取值 ----------------
@@ -259,14 +259,15 @@ class MachineScene(QWidget):
         first_slot = bank.first_slot
 
         margin_x = 30.0
-        lane_h = min(116.0, height * 0.19)
-        top_y = 46.0
+        top_y = 48.0
+        bed_h = min(240.0, max(120.0, height * 0.26))
+        lane_h = max(110.0, (height - top_y - 30.0 - 36.0 - bed_h) / 2.0)
         bottom_y = height - 30.0 - lane_h
         bed = QRectF(
             margin_x,
-            top_y + lane_h + 20.0,
+            top_y + lane_h + 18.0,
             width - margin_x * 2,
-            max(80.0, bottom_y - (top_y + lane_h) - 40.0),
+            max(80.0, bottom_y - 18.0 - (top_y + lane_h + 18.0)),
         )
         frame = QRectF(margin_x - 10, top_y - 16, width - margin_x * 2 + 20, bottom_y + lane_h + 20 - (top_y - 16))
         painter.setPen(QPen(QColor("#2b4652"), 1.4))
@@ -337,15 +338,26 @@ class MachineScene(QWidget):
             feeder = self._feeders.get(slot)
             x_mm = float(getattr(feeder, "pick_x_mm", 0.0)) if feeder is not None else 0.0
             if x_mm <= 0:
-                local = index if bank_name == "top" else index
-                x_mm = bank.origin.x + local * bank.slot_pitch_mm
+                x_mm = bank.origin.x + index * bank.slot_pitch_mm
             center_x = inner.left() + max(0.0, min(1.0, x_mm / travel_x)) * inner.width()
             lane = QRectF(center_x - lane_w / 2, area.top() + 6, lane_w, area.height() - 12)
             lanes.append((slot, lane))
 
-        left = min(lane.left() for _, lane in lanes) - 5
-        right = max(lane.right() for _, lane in lanes) + 5
-        base = QRectF(left, area.top(), max(10.0, right - left), area.height())
+        # 上下两排都按同一套槽位坐标画底板，保证左右对齐
+        base_left = (
+            inner.left()
+            + max(0.0, min(1.0, bank.origin.x / travel_x)) * inner.width()
+            - lane_w / 2
+            - 5
+        )
+        last_mm = bank.origin.x + (count - 1) * bank.slot_pitch_mm
+        base_right = (
+            inner.left()
+            + max(0.0, min(1.0, last_mm / travel_x)) * inner.width()
+            + lane_w / 2
+            + 5
+        )
+        base = QRectF(base_left, area.top(), max(10.0, base_right - base_left), area.height())
         painter.setPen(QPen(QColor(self.DIM), 1))
         painter.setBrush(QColor("#0b1419"))
         painter.drawRoundedRect(base, 5, 5)
@@ -367,7 +379,7 @@ class MachineScene(QWidget):
         feeder: Any,
         component: Any,
     ) -> None:
-        installed = feeder is not None and feeder.enabled
+        installed = feeder is not None and feeder.enabled and component is not None
         low = bool(feeder is not None and (feeder.is_empty or feeder.is_low))
         if installed and not low:
             fill = QColor(self.GREEN)
@@ -382,10 +394,9 @@ class MachineScene(QWidget):
             text_color = QColor("#ffe6b0")
             style = Qt.PenStyle.SolidLine
         else:
-            fill = QColor(self.AMBER)
-            fill.setAlpha(16)
-            border = QColor(self.AMBER)
-            text_color = QColor(self.AMBER)
+            fill = QColor(0, 0, 0, 0)
+            border = QColor(self.DIM)
+            text_color = QColor(COLORS["faint"])
             style = Qt.PenStyle.DashLine
         if slot == self._hover_slot:
             border = QColor(COLORS["accent"])
@@ -396,7 +407,7 @@ class MachineScene(QWidget):
 
         # 顶部料带规格，底部槽位号
         if feeder is not None:
-            painter.setPen(QColor("#dff3ea") if installed else QColor(COLORS["faint"]))
+            painter.setPen(text_color)
             num_font = QFont("Cascadia Mono", 6)
             mm_font = QFont("Cascadia Mono", 4)
             num_text = f"{feeder.tape_width_mm:g}"
@@ -416,9 +427,6 @@ class MachineScene(QWidget):
         )
 
         if feeder is None:
-            painter.setPen(QColor(self.AMBER))
-            painter.setFont(QFont("Microsoft YaHei UI", 10, QFont.Weight.DemiBold))
-            painter.drawText(lane, Qt.AlignmentFlag.AlignCenter, "空")
             return
         value, package = self._feeder_texts(feeder, component)
         label = value
@@ -690,9 +698,9 @@ class HomePage(QWidget):
         self.camera_hint.setProperty("role", "hint")
         self.camera_hint.setWordWrap(True)
         camera_card.body.addWidget(self.camera_hint)
-        left.addWidget(camera_card, 5)
-        left.addWidget(self._build_jog_card(), 5)
-        content.addLayout(left, 5)
+        left.addWidget(camera_card, 2)
+        left.addWidget(self._build_jog_card(), 1)
+        content.addLayout(left, 2)
 
         scene_card = Card(padding=12)
         scene_top = QHBoxLayout()
@@ -720,7 +728,7 @@ class HomePage(QWidget):
         tip.setProperty("role", "faint")
         legend.addWidget(tip)
         scene_card.body.addLayout(legend)
-        content.addWidget(scene_card, 7)
+        content.addWidget(scene_card, 3)
         outer.addLayout(content, 1)
 
         self.connect_button.clicked.connect(self._open_connect)
@@ -730,7 +738,7 @@ class HomePage(QWidget):
         self.vacuum_button.clicked.connect(self._toggle_vacuum)
 
     def _build_jog_card(self) -> Card:
-        card = Card(padding=12)
+        card = Card(padding=10)
         top = QHBoxLayout()
         title = QLabel("点动控制")
         title.setProperty("role", "section")
@@ -758,7 +766,7 @@ class HomePage(QWidget):
             control = button(label, variant="subtle")
             control.setProperty("segment", "true")
             control.setCheckable(True)
-            control.setFixedHeight(28)
+            control.setFixedHeight(26)
             control.clicked.connect(lambda checked=False, name=key: self._set_target(name))
             self.target_group.addButton(control)
             self.target_buttons[key] = control
@@ -769,7 +777,7 @@ class HomePage(QWidget):
         left_col.addLayout(target_row)
 
         grid = QGridLayout()
-        grid.setSpacing(6)
+        grid.setSpacing(4)
         self._jog_buttons: list[Any] = []
         for label, icon_name, row, col, direction in (
             ("Y+", "arrow-up", 0, 1, (0, 1, 0)),
@@ -780,7 +788,7 @@ class HomePage(QWidget):
         ):
             control = button(label, icon_name, "subtle")
             control.setProperty("jog", "true")
-            control.setMinimumSize(54, 42)
+            control.setMinimumSize(48, 34)
             if icon_name:
                 control.setIconSize(QSize(18, 18))
             else:
@@ -804,7 +812,7 @@ class HomePage(QWidget):
         z_home.setStyleSheet("font-size: 10px; font-weight: 600;")
         z_home.setToolTip("Z 轴单独归位")
         for row, control in enumerate((z_up, z_home, z_down)):
-            control.setMinimumSize(54, 42)
+            control.setMinimumSize(48, 34)
             if row == 1:
                 control.setIconSize(QSize(0, 0))
             grid.addWidget(control, row, 3)
@@ -818,7 +826,7 @@ class HomePage(QWidget):
         vacuum_row.setSpacing(8)
         self.vacuum_button = button("真空", "zap", "subtle")
         self.vacuum_button.setCheckable(True)
-        self.vacuum_button.setFixedHeight(28)
+        self.vacuum_button.setFixedHeight(26)
         self.vacuum_button.setMinimumWidth(88)
         vacuum_row.addWidget(self.vacuum_button)
         self.target_hint = QLabel("真空跟随所选吸嘴")
@@ -852,7 +860,8 @@ class HomePage(QWidget):
 
         self.jog_hint = QLabel("连接设备后可点动；生产运行时手动轴控被锁定。")
         self.jog_hint.setProperty("role", "faint")
-        card.body.addWidget(self.jog_hint)
+        self.jog_hint.hide()
+        card.setToolTip("连接设备后可点动；生产运行时手动轴控被锁定。")
         return card
 
     def _legend_item(self, text: str, color: str, dashed: bool) -> QWidget:
