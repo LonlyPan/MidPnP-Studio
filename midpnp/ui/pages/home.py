@@ -382,24 +382,36 @@ class MachineScene(QWidget):
         if slot == self._hover_slot:
             border = QColor(COLORS["accent"])
 
-        painter.setPen(QPen(border, 1.2, style))
+        # 图 1 样式：圆角飞达框、顶部圆点、方形窗口、下部规格，序号在框外底部
+        frame = lane.adjusted(1, 1, -1, -24)
+        painter.setPen(QPen(border, 1.3, style))
         painter.setBrush(fill)
-        painter.drawRoundedRect(lane, 2.5, 2.5)
+        painter.drawRoundedRect(frame, 7, 7)
 
-        # 只显示飞达规格（数字大、mm 单独一行）和槽位序号
         if feeder is not None:
+            cx = frame.center().x()
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(text_color)
+            painter.drawEllipse(QPointF(cx, frame.top() + 14), 2.8, 2.8)
+
+            window_w = max(10.0, min(16.0, frame.width() - 12))
+            window = QRectF(cx - window_w / 2, frame.top() + 25, window_w, 12)
+            painter.setPen(QPen(text_color, 1.2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(window, 1, 1)
+
             painter.setPen(text_color)
             num_text = f"{feeder.tape_width_mm:g}"
             num_size = 18 if len(num_text) == 1 else 16
             painter.setFont(QFont("Cascadia Mono", num_size, QFont.Weight.Bold))
             painter.drawText(
-                QRectF(lane.left(), lane.top() + 6, lane.width(), 26),
+                QRectF(frame.left(), frame.bottom() - 62, frame.width(), 28),
                 Qt.AlignmentFlag.AlignCenter,
                 num_text,
             )
             painter.setFont(QFont("Cascadia Mono", 9))
             painter.drawText(
-                QRectF(lane.left(), lane.top() + 32, lane.width(), 12),
+                QRectF(frame.left(), frame.bottom() - 33, frame.width(), 13),
                 Qt.AlignmentFlag.AlignCenter,
                 "mm",
             )
@@ -408,7 +420,7 @@ class MachineScene(QWidget):
             painter.setPen(QColor(COLORS["muted"]))
             painter.setFont(QFont("Cascadia Mono", 16 if slot < 10 else 14, QFont.Weight.Bold))
             painter.drawText(
-                QRectF(lane.left() + 1, lane.bottom() - 22, lane.width() - 2, 20),
+                QRectF(lane.left() + 1, lane.bottom() - 20, lane.width() - 2, 18),
                 Qt.AlignmentFlag.AlignCenter,
                 f"{slot}",
             )

@@ -72,8 +72,8 @@ def main() -> int:
         print("FAIL: production did not finish")
         return 1
     QTest.qWait(800)
-    records = storage.recent_runs(1)
-    record = records[0]
+    records = storage.recent_runs(10)
+    record = next((item for item in records if item.total == plan.total), records[0])
     print(
         f"run status={record.status} placed={record.placed}/{record.total} "
         f"duration={record.duration_s:.1f}s state={service.state.value}"
