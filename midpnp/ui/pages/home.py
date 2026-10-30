@@ -283,9 +283,6 @@ class MachineScene(QWidget):
             bottom_count,
             first_slot + top_count,
             "上排飞达",
-            inner,
-            travel_x,
-            bank,
             True,
         )
         self._draw_bank(
@@ -294,9 +291,6 @@ class MachineScene(QWidget):
             top_count,
             first_slot,
             "下排飞达",
-            inner,
-            travel_x,
-            bank,
             False,
         )
         self._draw_bed(painter, bed)
@@ -322,35 +316,32 @@ class MachineScene(QWidget):
         count: int,
         first_slot: int,
         title: str,
-        inner: QRectF,
-        travel_x: float,
-        bank: Any,
         reverse: bool,
     ) -> None:
         if count <= 0:
             return
-        pitch_px = bank.slot_pitch_mm / travel_x * inner.width()
-        lane_w = max(16.0, min(36.0, pitch_px - 1.5))
-        lanes: list[tuple[int, QRectF]] = []
-        for index in range(count):
-            slot = first_slot + (count - 1 - index if reverse else index)
-            feeder = self._feeders.get(slot)
-            x_mm = float(getattr(feeder, "pick_x_mm", 0.0)) if feeder is not None else 0.0
-            if x_mm <= 0:
-                x_mm = bank.origin.x + index * bank.slot_pitch_mm
-            center_x = inner.left() + max(0.0, min(1.0, x_mm / travel_x)) * inner.width()
-            lane = QRectF(center_x - lane_w / 2, area.top() + 6, lane_w, area.height() - 12)
-            lanes.append((slot, lane))
-
-        title_x = inner.left() + max(0.0, min(1.0, bank.origin.x / travel_x)) * inner.width() - lane_w / 2
+        # 左右各留一个空位作为盲区，其余 25 个槽位铺满整排
+        cells = count + 2
+        cell_w = area.width() / cells
         painter.setPen(QColor(COLORS["faint"]))
         painter.setFont(QFont("Microsoft YaHei UI", 8))
-        painter.drawText(QPointF(title_x, area.top() - 7), title)
+        painter.drawText(QPointF(area.left() + 4, area.top() - 7), title)
 
-        for slot, lane in lanes:
-            self._lane_rects[slot] = lane
+        for cell in range(cells):
+            lane = QRectF(
+                area.left() + cell * cell_w + 1,
+                area.top() + 6,
+                max(8.0, cell_w - 2),
+                area.height() - 12,
+            )
+            if cell == 0 or cell == cells - 1:
+                self._draw_lane(painter, lane, 0, None, None)
+                continue
+            index = cell - 1
+            slot = first_slot + (count - 1 - index if reverse else index)
             feeder = self._feeders.get(slot)
             component = self._components.get(feeder.component_id) if feeder else None
+            self._lane_rects[slot] = lane
             self._draw_lane(painter, lane, slot, feeder, component)
 
     def _draw_lane(
@@ -391,27 +382,28 @@ class MachineScene(QWidget):
         if feeder is not None:
             painter.setPen(text_color)
             num_text = f"{feeder.tape_width_mm:g}"
-            num_size = 16 if len(num_text) == 1 else 10
+            num_size = 18 if len(num_text) == 1 else 16
             painter.setFont(QFont("Cascadia Mono", num_size, QFont.Weight.Bold))
             painter.drawText(
-                QRectF(lane.left(), lane.top() + 6, lane.width(), 24),
+                QRectF(lane.left(), lane.top() + 6, lane.width(), 26),
                 Qt.AlignmentFlag.AlignCenter,
                 num_text,
             )
-            painter.setFont(QFont("Cascadia Mono", 8))
+            painter.setFont(QFont("Cascadia Mono", 9))
             painter.drawText(
-                QRectF(lane.left(), lane.top() + 30, lane.width(), 12),
+                QRectF(lane.left(), lane.top() + 32, lane.width(), 12),
                 Qt.AlignmentFlag.AlignCenter,
                 "mm",
             )
 
-        painter.setPen(QColor(COLORS["muted"]))
-        painter.setFont(QFont("Cascadia Mono", 12 if slot < 10 else 10, QFont.Weight.Bold))
-        painter.drawText(
-            QRectF(lane.left() + 1, lane.bottom() - 17, lane.width() - 2, 15),
-            Qt.AlignmentFlag.AlignCenter,
-            f"{slot}",
-        )
+        if slot > 0:
+            painter.setPen(QColor(COLORS["muted"]))
+            painter.setFont(QFont("Cascadia Mono", 16 if slot < 10 else 14, QFont.Weight.Bold))
+            painter.drawText(
+                QRectF(lane.left() + 1, lane.bottom() - 22, lane.width() - 2, 20),
+                Qt.AlignmentFlag.AlignCenter,
+                f"{slot}",
+            )
 
     @staticmethod
     def _feeder_texts(feeder: Any, component: Any) -> tuple[str, str]:
@@ -649,7 +641,6 @@ class HomePage(QWidget):
         camera_card.body.addLayout(camera_top)
         self.camera_view = CameraView()
         self.camera_view.setMinimumSize(320, 180)
-        self.camera_view.set_top_aligned(True)
         camera_card.body.addWidget(self.camera_view, 1)
 
         left_panel = QWidget()
@@ -658,9 +649,9 @@ class HomePage(QWidget):
         left_layout.setSpacing(0)
         left_split = QSplitter(Qt.Orientation.Vertical)
         left_split.setChildrenCollapsible(False)
-        left_split.setHandleWidth(7)
+        left_split.setHandleWidth(3)
         left_split.setStyleSheet(
-            "QSplitter::handle { background: #1b2a33; }"
+            "QSplitter::handle { background: #22343e; }"
             "QSplitter::handle:hover { background: #2f8fe0; }"
         )
         left_split.addWidget(camera_card)
@@ -699,9 +690,9 @@ class HomePage(QWidget):
         scene_card.body.addLayout(legend)
         content = QSplitter(Qt.Orientation.Horizontal)
         content.setChildrenCollapsible(False)
-        content.setHandleWidth(8)
+        content.setHandleWidth(3)
         content.setStyleSheet(
-            "QSplitter::handle { background: #1b2a33; }"
+            "QSplitter::handle { background: #22343e; }"
             "QSplitter::handle:hover { background: #2f8fe0; }"
         )
         content.addWidget(left_panel)
