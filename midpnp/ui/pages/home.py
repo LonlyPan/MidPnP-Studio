@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -279,24 +280,24 @@ class MachineScene(QWidget):
         self._draw_bank(
             painter,
             QRectF(margin_x, top_y, width - margin_x * 2, lane_h),
-            top_count,
-            first_slot,
+            bottom_count,
+            first_slot + top_count,
             "上排飞达",
             inner,
             travel_x,
             bank,
-            "top",
+            True,
         )
         self._draw_bank(
             painter,
             QRectF(margin_x, bottom_y, width - margin_x * 2, lane_h),
-            bottom_count,
-            first_slot + top_count,
+            top_count,
+            first_slot,
             "下排飞达",
             inner,
             travel_x,
             bank,
-            "bottom",
+            False,
         )
         self._draw_bed(painter, bed)
         self._draw_head(painter, frame)
@@ -324,15 +325,15 @@ class MachineScene(QWidget):
         inner: QRectF,
         travel_x: float,
         bank: Any,
-        bank_name: str,
+        reverse: bool,
     ) -> None:
         if count <= 0:
             return
         pitch_px = bank.slot_pitch_mm / travel_x * inner.width()
-        lane_w = max(18.0, min(36.0, pitch_px + 2.5))
+        lane_w = max(16.0, min(36.0, pitch_px - 1.5))
         lanes: list[tuple[int, QRectF]] = []
         for index in range(count):
-            slot = first_slot + index
+            slot = first_slot + (count - 1 - index if reverse else index)
             feeder = self._feeders.get(slot)
             x_mm = float(getattr(feeder, "pick_x_mm", 0.0)) if feeder is not None else 0.0
             if x_mm <= 0:
@@ -625,11 +626,6 @@ class HomePage(QWidget):
         banner_layout.addWidget(self.banner_button)
         outer.addWidget(self.banner)
 
-        content = QHBoxLayout()
-        content.setSpacing(12)
-        left = QVBoxLayout()
-        left.setSpacing(12)
-
         camera_card = Card(padding=12)
         camera_top = QHBoxLayout()
         camera_title = QLabel("相机画面")
@@ -653,11 +649,27 @@ class HomePage(QWidget):
         camera_card.body.addLayout(camera_top)
         self.camera_view = CameraView()
         self.camera_view.setMinimumSize(320, 180)
-        self.camera_view.setFixedHeight(240)
-        camera_card.body.addWidget(self.camera_view)
-        left.addWidget(camera_card, 0)
-        left.addWidget(self._build_jog_card(), 1)
-        content.addLayout(left, 3)
+        self.camera_view.set_top_aligned(True)
+        camera_card.body.addWidget(self.camera_view, 1)
+
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left_split = QSplitter(Qt.Orientation.Vertical)
+        left_split.setChildrenCollapsible(False)
+        left_split.setHandleWidth(7)
+        left_split.setStyleSheet(
+            "QSplitter::handle { background: #1b2a33; }"
+            "QSplitter::handle:hover { background: #2f8fe0; }"
+        )
+        left_split.addWidget(camera_card)
+        left_split.addWidget(self._build_jog_card())
+        left_split.setStretchFactor(0, 3)
+        left_split.setStretchFactor(1, 2)
+        left_split.setSizes([520, 346])
+        left_layout.addWidget(left_split)
+        self.left_split = left_split
 
         scene_card = Card(padding=12)
         scene_top = QHBoxLayout()
@@ -685,8 +697,20 @@ class HomePage(QWidget):
         tip.setProperty("role", "faint")
         legend.addWidget(tip)
         scene_card.body.addLayout(legend)
-        content.addWidget(scene_card, 7)
-        outer.addLayout(content, 1)
+        content = QSplitter(Qt.Orientation.Horizontal)
+        content.setChildrenCollapsible(False)
+        content.setHandleWidth(8)
+        content.setStyleSheet(
+            "QSplitter::handle { background: #1b2a33; }"
+            "QSplitter::handle:hover { background: #2f8fe0; }"
+        )
+        content.addWidget(left_panel)
+        content.addWidget(scene_card)
+        content.setStretchFactor(0, 3)
+        content.setStretchFactor(1, 7)
+        content.setSizes([430, 1002])
+        outer.addWidget(content, 1)
+        self.content_split = content
 
         self.banner_button.clicked.connect(self._open_connect)
         self.camera_top_button.clicked.connect(lambda: self._set_camera("top"))

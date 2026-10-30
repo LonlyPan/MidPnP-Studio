@@ -104,7 +104,7 @@ def build_demo_feeders() -> list[Feeder]:
             remaining=remaining,
             pitch_mm=pitch,
             pick_x_mm=pick_x,
-            pick_y_mm=332.0,
+            pick_y_mm=28.0,
             pick_z_mm=0.0,
             enabled=True,
             low_threshold_pct=15,

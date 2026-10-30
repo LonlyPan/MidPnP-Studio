@@ -7,6 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from midpnp.config import load_settings  # noqa: E402
@@ -91,10 +92,25 @@ class HomePageTests(unittest.TestCase):
 
     def test_top_and_bottom_banks_are_aligned(self) -> None:
         self.page.scene.grab()
-        top = self.page.scene._lane_rects[1]
-        bottom = self.page.scene._lane_rects[26]
-        self.assertAlmostEqual(top.left(), bottom.left(), delta=0.6)
-        self.assertAlmostEqual(top.width(), bottom.width(), delta=0.6)
+        bottom_left = self.page.scene._lane_rects[1]
+        top_left = self.page.scene._lane_rects[50]
+        bottom_right = self.page.scene._lane_rects[25]
+        top_right = self.page.scene._lane_rects[26]
+        self.assertAlmostEqual(bottom_left.left(), top_left.left(), delta=0.6)
+        self.assertAlmostEqual(bottom_right.right(), top_right.right(), delta=0.6)
+
+    def test_feeder_numbering_serpentine(self) -> None:
+        self.page.scene.grab()
+        lanes = self.page.scene._lane_rects
+        self.assertLess(lanes[1].left(), lanes[25].left())
+        self.assertLess(lanes[50].left(), lanes[26].left())
+        self.assertAlmostEqual(lanes[1].left(), lanes[50].left(), delta=0.6)
+
+    def test_default_splitter_ratios(self) -> None:
+        self.assertEqual(self.page.left_split.count(), 2)
+        self.assertEqual(self.page.left_split.orientation(), Qt.Orientation.Vertical)
+        self.assertEqual(self.page.content_split.count(), 2)
+        self.assertEqual(self.page.content_split.orientation(), Qt.Orientation.Horizontal)
 
     def test_camera_modes_switch(self) -> None:
         self.page._set_camera("top")

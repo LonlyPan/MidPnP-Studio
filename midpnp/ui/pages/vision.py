@@ -52,6 +52,11 @@ class CameraView(QWidget):
         self._detections: list[dict[str, Any]] = []
         self._hud: list[str] = []
         self._state_text = "等待采集"
+        self._top_aligned = False
+
+    def set_top_aligned(self, aligned: bool) -> None:
+        self._top_aligned = bool(aligned)
+        self.update()
 
     def set_frame(self, frame: Frame | None, detections: list[dict[str, Any]] | None = None) -> None:
         self._frame = frame
@@ -81,13 +86,23 @@ class CameraView(QWidget):
         height, width = image.shape
         buffer = (image * 255.0).astype(np.uint8)
         qimage = QImage(buffer.data, width, height, width, QImage.Format.Format_Grayscale8).copy()
+        if self._top_aligned:
+            # 相机卡片被拉高时，用暗化的填充图填满多余留白，避免大片纯黑
+            backdrop = qimage.scaled(
+                self.size(),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.setOpacity(0.22)
+            painter.drawImage(QPointF(0, 0), backdrop)
+            painter.setOpacity(1.0)
         scaled = qimage.scaled(
             self.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
         offset_x = (self.width() - scaled.width()) / 2.0
-        offset_y = (self.height() - scaled.height()) / 2.0
+        offset_y = 0.0 if self._top_aligned else (self.height() - scaled.height()) / 2.0
         painter.drawImage(QPointF(offset_x, offset_y), scaled)
         scale = scaled.width() / max(1, width)
 
