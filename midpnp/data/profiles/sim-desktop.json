@@ -5,6 +5,7 @@
   "description": "按 MidPnP M1 实物建模的虚拟贴片机：420×360 mm 行程、双吸嘴、上下各 25 个电动飞达、俯视 + 底部对中双相机。不连接任何硬件，用于流程演示与视觉算法自检。",
   "vendor": "MidPnP Studio",
   "image": "machines/m1.png",
+  "bed_image": "beds/m1-bed.png",
   "tags": ["simulator", "demo", "default", "m1"],
   "axes": {
     "x": {"name": "X 轴", "unit": "mm", "min": 0, "max": 420, "home": "min", "max_speed": 320, "accel": 2500, "steps_per_mm": 80, "soft_limit": true},

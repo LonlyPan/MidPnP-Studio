@@ -459,22 +459,13 @@ class MachineScene(QWidget):
         if image is not None:
             scaled = image.scaled(
                 bed.size().toSize(),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            src = QRectF(
-                (scaled.width() - bed.width()) / 2,
-                (scaled.height() - bed.height()) / 2,
-                bed.width(),
-                bed.height(),
-            )
-            painter.drawImage(bed, scaled, src)
+            painter.drawImage(bed, scaled)
         else:
             self._draw_default_bed(painter, bed)
         painter.restore()
-        painter.setPen(QPen(QColor("#2b4652"), 1.2))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(bed, 8, 8)
 
         def to_bed(mx: float, my: float) -> QPointF:
             return QPointF(
@@ -483,7 +474,7 @@ class MachineScene(QWidget):
             )
 
         product = self._product
-        if product is not None:
+        if product is not None and self._state in (MachineState.RUNNING, MachineState.PAUSED):
             top_left = to_bed(product.board_origin_x_mm, product.board_origin_y_mm + product.board_height_mm)
             bottom_right = to_bed(
                 product.board_origin_x_mm + product.board_width_mm,

@@ -125,7 +125,7 @@
 
 ```jsonc
 "image": "machines/m1.png",
-"bed_image": ""
+"bed_image": "beds/m1-bed.png"
 ```
 
 `image` 相对 `assets/` 目录，会显示在侧边栏设备卡、设备画廊卡片和连接弹窗里；
